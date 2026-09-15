@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Gradiente de fundo escuro moderno -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+
+    <!-- Sombra suave para o ícone interno -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.3" />
+    </filter>
+
+    <linearGradient id="lineGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e0f2fe" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle moderno / App Icon Base -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+
+  <!-- Detalhe decorativo sutil de iluminação no topo -->
+  <path d="M64 128C64 92.6538 92.6538 64 128 64H384C419.346 64 448 92.6538 448 128V192C448 192 376 160 256 160C136 160 64 192 64 192V128Z" fill="white" fill-opacity="0.08" />
+
+  <!-- Símbolo Comercial: Gráfico Ascendente Dinâmico com Ponta de Seta de Alta Precisão -->
+  <g filter="url(#glow)">
+    <!-- Caminho do gráfico -->
+    <path
+      d="M136 344L216 264L288 320L376 200"
+      stroke="url(#lineGrad)"
+      stroke-width="44"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <!-- Ponta da seta superior -->
+    <path
+      d="M296 184H384V272"
+      stroke="url(#lineGrad)"
+      stroke-width="44"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Ponto de destaque do valor negociado -->
+    <circle cx="216" cy="264" r="14" fill="#ffffff" />
+    <circle cx="288" cy="320" r="14" fill="#ffffff" />
+    <circle cx="384" cy="184" r="16" fill="#38bdf8" />
+  </g>
+</svg>
