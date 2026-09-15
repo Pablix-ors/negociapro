@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { TrendingUp, Building2, User, Mail, Lock, ArrowRight, Check } from 'lucide-react';
 import { maskCNPJ } from '@/lib/formatters';
+import { useAuth } from '@/context/AuthContext';
 
 export default function CadastroPage() {
   const router = useRouter();
+  const { signUp } = useAuth();
   const [companyName, setCompanyName] = useState('');
   const [cnpj, setCnpj] = useState('');
   const [userName, setUserName] = useState('');
@@ -15,17 +17,32 @@ export default function CadastroPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
-      alert('As senhas digitadas não coincidem.');
+      setStatus({ type: 'error', message: 'As senhas digitadas não coincidem.' });
       return;
     }
+
     setLoading(true);
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 800);
+    setStatus(null);
+
+    const res = await signUp(email, password, companyName, userName);
+
+    if (res.success) {
+      setStatus({
+        type: 'success',
+        message: 'Conta criada com sucesso! Enviamos um e-mail de confirmação para ativar sua conta.',
+      });
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 2500);
+    } else {
+      setStatus({ type: 'error', message: res.message || 'Erro ao realizar cadastro.' });
+    }
+    setLoading(false);
   };
 
   return (
@@ -47,6 +64,18 @@ export default function CadastroPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-lg relative z-10 px-4">
         <div className="bg-slate-900 border border-slate-800 py-8 px-6 shadow-2xl rounded-3xl sm:px-10">
+          {status && (
+            <div
+              className={`p-4 rounded-xl mb-4 text-xs font-semibold ${
+                status.type === 'success'
+                  ? 'bg-emerald-950/80 border border-emerald-800 text-emerald-300'
+                  : 'bg-rose-950/80 border border-rose-800 text-rose-300'
+              }`}
+            >
+              {status.message}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>

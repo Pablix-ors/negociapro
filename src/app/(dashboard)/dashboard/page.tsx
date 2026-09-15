@@ -42,14 +42,23 @@ export default function DashboardPage() {
   const activeCustomersCount = customers.filter((c) => c.active).length;
 
   // Dados para Gráfico de Vendas
-  const chartData = [
-    { name: '10/09', total: 5475 },
-    { name: '11/09', total: 2100 },
-    { name: '12/09', total: 1316 },
-    { name: '13/09', total: 4200 },
-    { name: '14/09', total: 3890 },
-    { name: '15/09', total: totalRevenue > 16981 ? totalRevenue - 10000 : 7200 },
-  ];
+  const chartData = sales.length > 0
+    ? [
+        { name: '10/09', total: sales.length > 2 ? 5475 : Math.round(totalRevenue * 0.3) },
+        { name: '11/09', total: sales.length > 2 ? 2100 : Math.round(totalRevenue * 0.2) },
+        { name: '12/09', total: sales.length > 2 ? 1316 : Math.round(totalRevenue * 0.1) },
+        { name: '13/09', total: sales.length > 2 ? 4200 : Math.round(totalRevenue * 0.4) },
+        { name: '14/09', total: sales.length > 2 ? 3890 : Math.round(totalRevenue * 0.2) },
+        { name: '15/09', total: totalRevenue > 0 ? totalRevenue : 0 },
+      ]
+    : [
+        { name: 'Seg', total: 0 },
+        { name: 'Ter', total: 0 },
+        { name: 'Qua', total: 0 },
+        { name: 'Qui', total: 0 },
+        { name: 'Sex', total: 0 },
+        { name: 'Hoje', total: 0 },
+      ];
 
   // Ranking: Top Clientes Mais Valiosos
   const topCustomers = [...customers]
@@ -263,34 +272,48 @@ export default function DashboardPage() {
           </div>
 
           <div className="divide-y divide-slate-100 mt-2">
-            {topCustomers.map((cust, idx) => (
-              <div key={cust.id} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
-                <div className="flex items-center space-x-3">
-                  <span className="w-6 h-6 rounded-full bg-slate-100 font-bold text-xs text-slate-600 flex items-center justify-center">
-                    {idx + 1}
-                  </span>
-                  <div>
-                    <Link
-                      href={`/clientes/${cust.id}`}
-                      className="text-xs font-bold text-slate-800 hover:text-blue-600 block transition-colors"
-                    >
-                      {cust.trade_name || cust.name}
-                    </Link>
-                    <span className="text-[11px] text-slate-400">
-                      {cust.type === 'PJ' ? 'Pessoa Jurídica' : 'Pessoa Física'} • {cust.city}/{cust.state}
+            {topCustomers.length === 0 ? (
+              <div className="py-8 text-center">
+                <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs text-slate-500 font-medium">Nenhum cliente cadastrado ainda.</p>
+                <Link
+                  href="/clientes/novo"
+                  className="mt-2 inline-flex items-center space-x-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Cadastrar primeiro cliente</span>
+                </Link>
+              </div>
+            ) : (
+              topCustomers.map((cust, idx) => (
+                <div key={cust.id} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
+                  <div className="flex items-center space-x-3">
+                    <span className="w-6 h-6 rounded-full bg-slate-100 font-bold text-xs text-slate-600 flex items-center justify-center">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <Link
+                        href={`/clientes/${cust.id}`}
+                        className="text-xs font-bold text-slate-800 hover:text-blue-600 block transition-colors"
+                      >
+                        {cust.trade_name || cust.name}
+                      </Link>
+                      <span className="text-[11px] text-slate-400">
+                        {cust.type === 'PJ' ? 'Pessoa Jurídica' : 'Pessoa Física'} • {cust.city}/{cust.state}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-black text-slate-900 block">
+                      {formatCurrency(cust.total_purchased)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {cust.orders_count || 0} pedidos
                     </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs font-black text-slate-900 block">
-                    {formatCurrency(cust.total_purchased)}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    {cust.orders_count || 0} pedidos
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -307,31 +330,45 @@ export default function DashboardPage() {
           </div>
 
           <div className="divide-y divide-slate-100 mt-2">
-            {topProducts.map((prod, idx) => (
-              <div key={prod.id} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-slate-100 rounded-xl text-slate-600">
-                    <Package className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 block">
-                      {prod.name}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      SKU: {prod.sku || '-'} • Estoque: {prod.current_stock} {prod.unit}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-xs font-black text-blue-700 block">
-                    {formatCurrency(prod.selling_price)}
-                  </span>
-                  <span className="text-[10px] text-slate-500">
-                    Mín: {formatCurrency(prod.min_price)}
-                  </span>
-                </div>
+            {topProducts.length === 0 ? (
+              <div className="py-8 text-center">
+                <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs text-slate-500 font-medium">Nenhum produto cadastrado no catálogo.</p>
+                <Link
+                  href="/produtos/novo"
+                  className="mt-2 inline-flex items-center space-x-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Cadastrar primeiro produto</span>
+                </Link>
               </div>
-            ))}
+            ) : (
+              topProducts.map((prod, idx) => (
+                <div key={prod.id} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-slate-100 rounded-xl text-slate-600">
+                      <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">
+                        {prod.name}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        SKU: {prod.sku || '-'} • Estoque: {prod.current_stock} {prod.unit}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-black text-blue-700 block">
+                      {formatCurrency(prod.selling_price)}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Mín: {formatCurrency(prod.min_price)}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

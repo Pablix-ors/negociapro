@@ -32,11 +32,25 @@ export default function NovaVendaPage() {
   const { customers, products, createSale } = useData();
 
   // Estado da Venda
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('cust-01'); // Padrão: João da Silva Santos
-  const [selectedProductId, setSelectedProductId] = useState<string>('prod-01'); // Padrão: Cimento CP II
-  const [quantity, setQuantity] = useState<number>(40);
-  const [unitPrice, setUnitPrice] = useState<number>(34.50);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [quantity, setQuantity] = useState<number>(1);
+  const [unitPrice, setUnitPrice] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
+
+  // Sincronizar seleção inicial quando os dados carregarem
+  React.useEffect(() => {
+    if (customers.length > 0 && !selectedCustomerId) {
+      setSelectedCustomerId(customers[0].id);
+    }
+  }, [customers, selectedCustomerId]);
+
+  React.useEffect(() => {
+    if (products.length > 0 && !selectedProductId) {
+      setSelectedProductId(products[0].id);
+      setUnitPrice(products[0].selling_price);
+    }
+  }, [products, selectedProductId]);
 
   // Carrinho de Itens da Venda Atual
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -140,60 +154,107 @@ export default function NovaVendaPage() {
         <div className="lg:col-span-7 space-y-6">
           {/* Card 1: Seleção do Cliente */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-              1. Selecione o Cliente
-            </label>
-            <div className="relative">
-              <select
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                1. Selecione o Cliente
+              </label>
+              <button
+                type="button"
+                onClick={() => router.push('/clientes/novo')}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
               >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.trade_name ? `${c.trade_name} (${c.name})` : c.name} — {c.document} [{c.type}]
-                  </option>
-                ))}
-              </select>
+                + Novo Cliente
+              </button>
             </div>
 
-            {currentCustomer && (
-              <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                <div>
-                  <span className="font-bold text-slate-800">{currentCustomer.name}</span>
-                  <span className="block text-[11px] text-slate-400">
-                    {currentCustomer.city}/{currentCustomer.state} • {currentCustomer.phone}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 block">Total já comprado</span>
-                  <span className="font-bold text-blue-700">
-                    {formatCurrency(currentCustomer.total_purchased)}
-                  </span>
-                </div>
+            {customers.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center">
+                <p className="text-xs text-slate-500 mb-2">Sua carteira de clientes ainda está vazia.</p>
+                <button
+                  type="button"
+                  onClick={() => router.push('/clientes/novo')}
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-xs hover:bg-blue-700"
+                >
+                  Cadastrar Primeiro Cliente
+                </button>
               </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(e) => setSelectedCustomerId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  >
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.trade_name ? `${c.trade_name} (${c.name})` : c.name} — {c.document} [{c.type}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {currentCustomer && (
+                  <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                    <div>
+                      <span className="font-bold text-slate-800">{currentCustomer.name}</span>
+                      <span className="block text-[11px] text-slate-400">
+                        {currentCustomer.city}/{currentCustomer.state} • {currentCustomer.phone}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 block">Total já comprado</span>
+                      <span className="font-bold text-blue-700">
+                        {formatCurrency(currentCustomer.total_purchased)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           {/* Card 2: Seleção do Produto & Valores */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              2. Selecione o Produto & Negocie o Preço
-            </label>
-
-            <div>
-              <select
-                value={selectedProductId}
-                onChange={(e) => handleProductChange(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                2. Selecione o Produto & Negocie o Preço
+              </label>
+              <button
+                type="button"
+                onClick={() => router.push('/produtos/novo')}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
               >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (SKU: {p.sku || '-'}) — Estoque: {p.current_stock} {p.unit} — Tabela: {formatCurrency(p.selling_price)}
-                  </option>
-                ))}
-              </select>
+                + Novo Produto
+              </button>
             </div>
+
+            {products.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center">
+                <p className="text-xs text-slate-500 mb-2">Seu catálogo de produtos ainda está vazio.</p>
+                <button
+                  type="button"
+                  onClick={() => router.push('/produtos/novo')}
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-xs hover:bg-blue-700"
+                >
+                  Cadastrar Primeiro Produto
+                </button>
+              </div>
+            ) : (
+              <div>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => handleProductChange(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                >
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (SKU: {p.sku || '-'}) — Estoque: {p.current_stock} {p.unit} — Tabela: {formatCurrency(p.selling_price)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Inclusão do Componente Principal: Histórico de Preços para este Cliente */}
             {currentProduct && selectedCustomerId && (

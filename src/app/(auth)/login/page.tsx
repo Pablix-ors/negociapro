@@ -3,20 +3,27 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { TrendingUp, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
+import { TrendingUp, Lock, Mail, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@negociapro.com.br');
-  const [password, setPassword] = useState('123456');
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 600);
+    await login(email, password);
+    router.push('/dashboard');
+  };
+
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    await login('admin@negociapro.com.br', '123456');
+    router.push('/dashboard');
   };
 
   return (
@@ -87,6 +94,22 @@ export default function LoginPage() {
             >
               <span>{loading ? 'Entrando...' : 'Entrar no NegociaPro'}</span>
               <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <div className="relative flex py-2 items-center">
+              <div className="grow border-t border-slate-800"></div>
+              <span className="shrink mx-3 text-[11px] text-slate-500 font-medium">ou teste rápido</span>
+              <div className="grow border-t border-slate-800"></div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={loading}
+              className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-all border border-slate-700 flex items-center justify-center space-x-2"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Acessar com Usuário de Demonstração (Carlos)</span>
             </button>
           </form>
 

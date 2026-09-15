@@ -47,56 +47,86 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
+const DEMO_NOTIFICATIONS: AppNotification[] = [
+  {
+    id: 'notif-1',
+    type: 'PRICE_ALERT',
+    title: 'Alerta de Negociação: Cimento CP II 50kg',
+    message: 'João da Silva Santos recebeu proposta de R$ 32,90 (abaixo da tabela de R$ 36,90).',
+    timestamp: 'Há 15 minutos',
+    read: false,
+    link: '/vendas/nova',
+  },
+  {
+    id: 'notif-2',
+    type: 'STOCK_ALERT',
+    title: 'Alerta de Estoque Crítico',
+    message: 'Argamassa AC-II 20kg atingiu 20 SC (estoque mínimo é 50 SC).',
+    timestamp: 'Há 1 hora',
+    read: false,
+    link: '/produtos',
+  },
+  {
+    id: 'notif-3',
+    type: 'SALE_COMPLETED',
+    title: 'Venda Concluída #1002',
+    message: 'Venda de R$ 5.475,00 para Construtora Alfa Engenharia finalizada.',
+    timestamp: 'Há 3 horas',
+    read: true,
+    link: '/vendas',
+  },
+];
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { user, company } = useAuth();
-  const [customers, setCustomers] = useState<Customer[]>(DEMO_CUSTOMERS);
-  const [products, setProducts] = useState<Product[]>(DEMO_PRODUCTS);
-  const [sales, setSales] = useState<Sale[]>(DEMO_SALES);
-  const [priceHistoryMap, setPriceHistoryMap] = useState<Record<string, PriceHistorySummary>>(DEMO_PRICE_HISTORY_MAP);
-  const [notifications, setNotifications] = useState<AppNotification[]>([
-    {
-      id: 'notif-1',
-      type: 'PRICE_ALERT',
-      title: 'Alerta de Negociação: Cimento CP II 50kg',
-      message: 'João da Silva Santos recebeu proposta de R$ 32,90 (abaixo da tabela de R$ 36,90).',
-      timestamp: 'Há 15 minutos',
-      read: false,
-      link: '/vendas/nova',
-    },
-    {
-      id: 'notif-2',
-      type: 'STOCK_ALERT',
-      title: 'Alerta de Estoque Crítico',
-      message: 'Argamassa AC-II 20kg atingiu 20 SC (estoque mínimo é 50 SC).',
-      timestamp: 'Há 1 hora',
-      read: false,
-      link: '/produtos',
-    },
-    {
-      id: 'notif-3',
-      type: 'SALE_COMPLETED',
-      title: 'Venda Concluída #1002',
-      message: 'Venda de R$ 5.475,00 para Construtora Alfa Engenharia finalizada.',
-      timestamp: 'Há 3 horas',
-      read: true,
-      link: '/vendas',
-    },
-  ]);
+  const isDemo = !user || user.email === 'admin@negociapro.com.br';
 
-  // Carregar do localStorage se disponível para persistência de teste
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [priceHistoryMap, setPriceHistoryMap] = useState<Record<string, PriceHistorySummary>>({});
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  // Carregar dados de acordo com o usuário (conta nova = zerada; conta demo = mock)
   useEffect(() => {
+    const isDemoUser = !user || user.email === 'admin@negociapro.com.br';
+
     const savedCust = localStorage.getItem('negociapro_customers');
     const savedProd = localStorage.getItem('negociapro_products');
     const savedSales = localStorage.getItem('negociapro_sales');
     const savedHist = localStorage.getItem('negociapro_history');
     const savedNotifs = localStorage.getItem('negociapro_notifications');
 
-    if (savedCust) try { setCustomers(JSON.parse(savedCust)); } catch {}
-    if (savedProd) try { setProducts(JSON.parse(savedProd)); } catch {}
-    if (savedSales) try { setSales(JSON.parse(savedSales)); } catch {}
-    if (savedHist) try { setPriceHistoryMap(JSON.parse(savedHist)); } catch {}
-    if (savedNotifs) try { setNotifications(JSON.parse(savedNotifs)); } catch {}
-  }, []);
+    if (savedCust) {
+      try { setCustomers(JSON.parse(savedCust)); } catch {}
+    } else {
+      setCustomers(isDemoUser ? DEMO_CUSTOMERS : []);
+    }
+
+    if (savedProd) {
+      try { setProducts(JSON.parse(savedProd)); } catch {}
+    } else {
+      setProducts(isDemoUser ? DEMO_PRODUCTS : []);
+    }
+
+    if (savedSales) {
+      try { setSales(JSON.parse(savedSales)); } catch {}
+    } else {
+      setSales(isDemoUser ? DEMO_SALES : []);
+    }
+
+    if (savedHist) {
+      try { setPriceHistoryMap(JSON.parse(savedHist)); } catch {}
+    } else {
+      setPriceHistoryMap(isDemoUser ? DEMO_PRICE_HISTORY_MAP : {});
+    }
+
+    if (savedNotifs) {
+      try { setNotifications(JSON.parse(savedNotifs)); } catch {}
+    } else {
+      setNotifications(isDemoUser ? DEMO_NOTIFICATIONS : []);
+    }
+  }, [user]);
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
