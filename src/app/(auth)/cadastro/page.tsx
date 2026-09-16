@@ -34,11 +34,11 @@ export default function CadastroPage() {
     if (res.success) {
       setStatus({
         type: 'success',
-        message: 'Conta criada com sucesso! Enviamos um e-mail de confirmação para ativar sua conta.',
+        message: res.message || 'Conta criada com sucesso! Redirecionando para o seu painel...',
       });
       setTimeout(() => {
         router.push('/dashboard');
-      }, 2500);
+      }, 1500);
     } else {
       setStatus({ type: 'error', message: res.message || 'Erro ao realizar cadastro.' });
     }

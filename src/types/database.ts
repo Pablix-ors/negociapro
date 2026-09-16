@@ -24,6 +24,9 @@ export interface Company {
   city?: string | null;
   state?: string | null;
   country?: string;
+  status?: 'ATIVO' | 'INATIVO' | 'BLOQUEADO';
+  blocked_reason?: string | null;
+  last_accessed_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }

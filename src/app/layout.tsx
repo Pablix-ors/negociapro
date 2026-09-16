@@ -37,6 +37,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { MasterAuthProvider } from '@/context/MasterAuthContext';
+
 export default function RootLayout({
   children,
 }: {
@@ -72,7 +74,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col font-sans bg-slate-950 text-slate-100">
-        {children}
+        <MasterAuthProvider>
+          {children}
+        </MasterAuthProvider>
       </body>
     </html>
   );

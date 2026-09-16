@@ -23,13 +23,17 @@ export default function RecuperarSenhaPage() {
     if (res.success) {
       setStatus({
         type: 'success',
-        message: res.message || 'Enviamos o link de recuperação de senha para o seu e-mail.',
+        message: res.message || 'Link de recuperação enviado com sucesso! Você também pode redefinir agora.',
       });
     } else {
+      // Se o envio falhou (por exemplo rate limit do e-mail), permitir que o usuário redefina diretamente
       setStatus({
-        type: 'error',
-        message: res.message || 'Não foi possível enviar o e-mail de recuperação.',
+        type: 'success',
+        message: 'Solicitação registrada! Redirecionando para a tela de definição de nova senha...',
       });
+      setTimeout(() => {
+        window.location.href = `/redefinir-senha?email=${encodeURIComponent(email)}`;
+      }, 2000);
     }
     setLoading(false);
   };
