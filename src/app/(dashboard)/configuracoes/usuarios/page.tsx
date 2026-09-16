@@ -1,47 +1,66 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { UserCheck, Plus, Shield, User, Check, X } from 'lucide-react';
 import { Profile, UserRole } from '@/types/database';
 
+const DEFAULT_USERS: Profile[] = [
+  {
+    id: 'b0000000-0000-0000-0000-000000000001',
+    company_id: 'a0000000-0000-0000-0000-000000000001',
+    name: 'Carlos Vendedor Master',
+    email: 'admin@negociapro.com.br',
+    role: 'ADMIN',
+    phone: '(11) 99999-8888',
+    active: true,
+  },
+  {
+    id: 'b0000000-0000-0000-0000-000000000002',
+    company_id: 'a0000000-0000-0000-0000-000000000001',
+    name: 'Fernanda Gerente Comercial',
+    email: 'gerente@negociapro.com.br',
+    role: 'GERENTE',
+    phone: '(11) 98888-7777',
+    active: true,
+  },
+  {
+    id: 'b0000000-0000-0000-0000-000000000003',
+    company_id: 'a0000000-0000-0000-0000-000000000001',
+    name: 'Lucas Vendedor Externo',
+    email: 'lucas.vendas@negociapro.com.br',
+    role: 'VENDEDOR',
+    phone: '(11) 97777-6666',
+    active: true,
+  },
+];
+
 export default function UsuariosConfigPage() {
   const { user } = useAuth();
 
-  const [usersList, setUsersList] = useState<Profile[]>([
-    {
-      id: 'b0000000-0000-0000-0000-000000000001',
-      company_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Carlos Vendedor Master',
-      email: 'admin@negociapro.com.br',
-      role: 'ADMIN',
-      phone: '(11) 99999-8888',
-      active: true,
-    },
-    {
-      id: 'b0000000-0000-0000-0000-000000000002',
-      company_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Fernanda Gerente Comercial',
-      email: 'gerente@negociapro.com.br',
-      role: 'GERENTE',
-      phone: '(11) 98888-7777',
-      active: true,
-    },
-    {
-      id: 'b0000000-0000-0000-0000-000000000003',
-      company_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Lucas Vendedor Externo',
-      email: 'lucas.vendas@negociapro.com.br',
-      role: 'VENDEDOR',
-      phone: '(11) 97777-6666',
-      active: true,
-    },
-  ]);
-
+  const [usersList, setUsersList] = useState<Profile[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('VENDEDOR');
+
+  // Carregar usuários salvos do localStorage
+  useEffect(() => {
+    const raw = localStorage.getItem('negociapro_users_list');
+    if (raw) {
+      try {
+        setUsersList(JSON.parse(raw));
+        return;
+      } catch {}
+    }
+    setUsersList(DEFAULT_USERS);
+    localStorage.setItem('negociapro_users_list', JSON.stringify(DEFAULT_USERS));
+  }, []);
+
+  const saveUsersState = (newList: Profile[]) => {
+    setUsersList(newList);
+    localStorage.setItem('negociapro_users_list', JSON.stringify(newList));
+  };
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,16 +72,15 @@ export default function UsuariosConfigPage() {
       role: newRole,
       active: true,
     };
-    setUsersList([...usersList, newUser]);
+    saveUsersState([...usersList, newUser]);
     setShowModal(false);
     setNewName('');
     setNewEmail('');
   };
 
   const toggleUserStatus = (id: string) => {
-    setUsersList(
-      usersList.map((u) => (u.id === id ? { ...u, active: !u.active } : u))
-    );
+    const updated = usersList.map((u) => (u.id === id ? { ...u, active: !u.active } : u));
+    saveUsersState(updated);
   };
 
   return (

@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
-import { formatCurrency, formatDate } from '@/lib/formatters';
+import { formatCurrency, formatDate, formatDateTime } from '@/lib/formatters';
+import { Sale } from '@/types/database';
 import {
   ShoppingCart,
   Plus,
@@ -13,6 +14,12 @@ import {
   XCircle,
   FileText,
   User,
+  Award,
+  DollarSign,
+  X,
+  Calendar,
+  CreditCard,
+  Package,
 } from 'lucide-react';
 
 export default function VendasPage() {
@@ -20,10 +27,15 @@ export default function VendasPage() {
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED'>('ALL');
 
+  // Modal de Detalhes da Venda
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+
   const filteredSales = sales.filter((s) => {
     const matchesQuery =
       String(s.sale_number).includes(filterQuery) ||
-      (s.customer?.name && s.customer.name.toLowerCase().includes(filterQuery.toLowerCase()));
+      (s.customer?.name && s.customer.name.toLowerCase().includes(filterQuery.toLowerCase())) ||
+      (s.professional?.name && s.professional.name.toLowerCase().includes(filterQuery.toLowerCase()));
+
     const matchesStatus = statusFilter === 'ALL' || s.status === statusFilter;
     return matchesQuery && matchesStatus;
   });
@@ -37,7 +49,7 @@ export default function VendasPage() {
             Histórico de Vendas
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Acompanhe todas as vendas, pedidos faturados e seus respectivos históricos de preços.
+            Acompanhe vendas faturadas, profissionais vinculados e histórico imutável de comissões e preços.
           </p>
         </div>
 
@@ -58,7 +70,7 @@ export default function VendasPage() {
             type="text"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Buscar por número do pedido ou nome do cliente..."
+            placeholder="Buscar por pedido, cliente ou profissional..."
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -94,7 +106,7 @@ export default function VendasPage() {
         </div>
       </div>
 
-      {/* Tabela de Vendas */}
+      {/* Tabela Responsiva com Modo Card Mobile */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         {filteredSales.length === 0 ? (
           <div className="p-12 text-center">
@@ -116,81 +128,272 @@ export default function VendasPage() {
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                <tr>
-                  <th className="p-4">Pedido</th>
-                  <th className="p-4">Data</th>
-                  <th className="p-4">Cliente</th>
-                  <th className="p-4">Vendedor</th>
-                  <th className="p-4">Itens</th>
-                  <th className="p-4 text-right">Valor Total</th>
-                  <th className="p-4 text-center">Status</th>
-                  <th className="p-4 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredSales.map((sale) => (
-                  <tr key={sale.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="p-4 font-black text-slate-900 whitespace-nowrap">
-                      #{sale.sale_number}
-                    </td>
-                    <td className="p-4 text-slate-500 whitespace-nowrap">
-                      {formatDate(sale.sold_at)}
-                    </td>
-                    <td className="p-4 font-bold text-slate-800">
-                      <Link
-                        href={`/clientes/${sale.customer_id}`}
-                        className="hover:text-blue-600 transition-colors"
-                      >
-                        {sale.customer?.name}
-                      </Link>
-                      <span className="block text-[11px] text-slate-400 font-normal">
-                        {sale.customer?.document}
-                      </span>
-                    </td>
-                    <td className="p-4 text-slate-600">
-                      {sale.seller?.name || 'Carlos Vendedor'}
-                    </td>
-                    <td className="p-4 text-slate-600">
-                      {sale.items?.length || 1} itens
-                    </td>
-                    <td className="p-4 text-right font-black text-slate-900 whitespace-nowrap">
-                      {formatCurrency(sale.total)}
-                    </td>
-                    <td className="p-4 text-center whitespace-nowrap">
-                      {sale.status === 'COMPLETED' ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Concluída
+          <>
+            {/* Tabela Desktop */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">Pedido</th>
+                    <th className="p-4">Data</th>
+                    <th className="p-4">Cliente</th>
+                    <th className="p-4">Profissional</th>
+                    <th className="p-4">Itens</th>
+                    <th className="p-4 text-right">Comissão Total</th>
+                    <th className="p-4 text-right">Valor Total</th>
+                    <th className="p-4 text-center">Status</th>
+                    <th className="p-4 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSales.map((sale) => (
+                    <tr key={sale.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-4 font-black text-slate-900 whitespace-nowrap">
+                        #{sale.sale_number}
+                      </td>
+                      <td className="p-4 text-slate-500 whitespace-nowrap">
+                        {formatDate(sale.sold_at)}
+                      </td>
+                      <td className="p-4 font-bold text-slate-800">
+                        <Link
+                          href={`/clientes/${sale.customer_id}`}
+                          className="hover:text-blue-600 transition-colors"
+                        >
+                          {sale.customer?.name}
+                        </Link>
+                        <span className="block text-[11px] text-slate-400 font-normal">
+                          {sale.customer?.document}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
-                          Cancelada
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-4 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center space-x-2">
-                        {sale.status === 'COMPLETED' && (
+                      </td>
+                      <td className="p-4 text-slate-600">
+                        {sale.professional?.name ? (
+                          <span className="font-semibold text-slate-800 flex items-center space-x-1">
+                            <Award className="w-3.5 h-3.5 text-blue-600" />
+                            <span>{sale.professional.name}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">Não vinculado</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-slate-600">
+                        {sale.items?.length || 1} itens
+                      </td>
+                      <td className="p-4 text-right font-bold text-emerald-600 whitespace-nowrap">
+                        {sale.commission_total > 0 ? formatCurrency(sale.commission_total) : '-'}
+                      </td>
+                      <td className="p-4 text-right font-black text-slate-900 whitespace-nowrap">
+                        {formatCurrency(sale.total)}
+                      </td>
+                      <td className="p-4 text-center whitespace-nowrap">
+                        {sale.status === 'COMPLETED' ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Concluída
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                            Cancelada
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center space-x-2">
                           <button
                             type="button"
-                            onClick={() => cancelSale(sale.id)}
-                            title="Cancelar venda com segurança (preserva histórico)"
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            onClick={() => setSelectedSale(sale)}
+                            title="Ver Detalhes da Venda"
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           >
-                            <XCircle className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                          {sale.status === 'COMPLETED' && (
+                            <button
+                              type="button"
+                              onClick={() => cancelSale(sale.id)}
+                              title="Cancelar venda com segurança"
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modo Card Mobile */}
+            <div className="lg:hidden divide-y divide-slate-100">
+              {filteredSales.map((sale) => (
+                <div key={sale.id} className="p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-900 text-sm">#{sale.sale_number}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        sale.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                      }`}
+                    >
+                      {sale.status === 'COMPLETED' ? 'Concluída' : 'Cancelada'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">{sale.customer?.name}</span>
+                    <span className="text-[11px] text-slate-400">{formatDate(sale.sold_at)}</span>
+                  </div>
+
+                  {sale.professional && (
+                    <div className="text-xs text-slate-600 flex items-center space-x-1">
+                      <Award className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>Profissional: <strong>{sale.professional.name}</strong></span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                    <div>
+                      {sale.commission_total > 0 && (
+                        <span className="text-[10px] text-emerald-700 block font-semibold">
+                          Comissão: {formatCurrency(sale.commission_total)}
+                        </span>
+                      )}
+                      <span className="text-sm font-black text-slate-900">
+                        Total: {formatCurrency(sale.total)}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSale(sale)}
+                      className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold flex items-center space-x-1 active:bg-blue-100"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Detalhes</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
+
+      {/* Modal Completo de Detalhes da Venda */}
+      {selectedSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl p-6 border border-slate-200 animate-in fade-in zoom-in-95 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-lg font-black text-slate-900">
+                    Venda #{selectedSale.sale_number}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      selectedSale.status === 'COMPLETED'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-red-50 text-red-700 border border-red-200'
+                    }`}
+                  >
+                    {selectedSale.status === 'COMPLETED' ? 'Concluída' : 'Cancelada'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Realizada em {formatDateTime(selectedSale.sold_at)}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedSale(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Informações Gerais */}
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-100 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Cliente</span>
+                <span className="font-bold text-slate-900 block mt-0.5">{selectedSale.customer?.name}</span>
+                <span className="text-slate-500 text-[11px]">{selectedSale.customer?.document}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Profissional Responsável</span>
+                <span className="font-bold text-blue-700 block mt-0.5">
+                  {selectedSale.professional?.name || 'Nenhum profissional vinculado'}
+                </span>
+                <span className="text-slate-500 text-[11px]">{selectedSale.professional?.role_title || ''}</span>
+              </div>
+            </div>
+
+            {/* Itens da Venda com Snapshots de Preço e Comissão */}
+            <div className="mt-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2">
+                Itens e Snapshots de Negociação
+              </span>
+              <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 text-xs">
+                {selectedSale.items?.map((item, idx) => (
+                  <div key={idx} className="p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-slate-900 block">{item.product?.name || 'Produto'}</span>
+                      <span className="text-[11px] text-slate-500">
+                        {item.quantity} {item.product?.unit || 'UN'} × {formatCurrency(item.unit_price)}
+                        {item.discount > 0 && ` (Desconto: ${formatCurrency(item.discount)})`}
+                      </span>
+                    </div>
+                    <div className="sm:text-right">
+                      <span className="font-black text-slate-900 block">{formatCurrency(item.total)}</span>
+                      {item.commission_amount !== undefined && item.commission_amount > 0 && (
+                        <span className="text-[11px] text-emerald-700 font-semibold block">
+                          Comissão ({item.commission_type_snapshot === 'PERCENTAGE' ? `${item.commission_value_snapshot}%` : `${formatCurrency(item.commission_value_snapshot)}/un`}): {formatCurrency(item.commission_amount)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Totais Consolidados */}
+            <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-500">
+                <span>Subtotal:</span>
+                <span>{formatCurrency(selectedSale.subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-slate-500">
+                <span>Desconto Total:</span>
+                <span className="text-red-600 font-medium">- {formatCurrency(selectedSale.discount)}</span>
+              </div>
+              <div className="flex justify-between text-slate-700 font-semibold">
+                <span>Comissão Total Gravada:</span>
+                <span className="text-emerald-700 font-bold">{formatCurrency(selectedSale.commission_total || 0)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
+                <span>Valor Final Pago:</span>
+                <span className="text-lg text-blue-700">{formatCurrency(selectedSale.total)}</span>
+              </div>
+            </div>
+
+            {selectedSale.notes && (
+              <div className="mt-3 p-3 rounded-xl bg-slate-100/70 text-[11px] text-slate-600">
+                <strong>Observações:</strong> {selectedSale.notes}
+              </div>
+            )}
+
+            <div className="mt-5 pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedSale(null)}
+                className="px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+              >
+                Fechar Detalhes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

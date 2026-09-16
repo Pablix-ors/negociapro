@@ -15,6 +15,10 @@ import {
   Filter,
   Plus,
   Sparkles,
+  Award,
+  DollarSign,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -29,17 +33,23 @@ import {
 } from 'recharts';
 
 export default function DashboardPage() {
-  const { sales, customers, products } = useData();
+  const { sales, customers, products, professionals, commissions } = useData();
   const [period, setPeriod] = useState<'7d' | '30d' | 'mes' | 'ano'>('30d');
 
   // Cálculos de métricas
-  const totalRevenue = sales
-    .filter((s) => s.status === 'COMPLETED')
-    .reduce((acc, s) => acc + s.total, 0);
-
-  const completedSalesCount = sales.filter((s) => s.status === 'COMPLETED').length;
+  const completedSales = sales.filter((s) => s.status === 'COMPLETED');
+  const totalRevenue = completedSales.reduce((acc, s) => acc + s.total, 0);
+  const completedSalesCount = completedSales.length;
   const avgTicket = completedSalesCount > 0 ? totalRevenue / completedSalesCount : 0;
   const activeCustomersCount = customers.filter((c) => c.active).length;
+
+  // Métricas de Comissões
+  const pendingCommissionsTotal = commissions
+    .filter((c) => c.status === 'PENDENTE')
+    .reduce((acc, c) => acc + c.commission_amount, 0);
+  const paidCommissionsTotal = commissions
+    .filter((c) => c.status === 'PAGA')
+    .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
 
   // Dados para Gráfico de Vendas
   const chartData = sales.length > 0
@@ -60,6 +70,13 @@ export default function DashboardPage() {
         { name: 'Hoje', total: 0 },
       ];
 
+  // Gráfico: Vendas por Profissional
+  const professionalChartData = professionals.map((p) => ({
+    name: p.name.split(' ')[0],
+    total: p.total_sales || 0,
+    comissao: p.commission_earned || 0,
+  }));
+
   // Ranking: Top Clientes Mais Valiosos
   const topCustomers = [...customers]
     .sort((a, b) => (b.total_purchased || 0) - (a.total_purchased || 0))
@@ -79,12 +96,12 @@ export default function DashboardPage() {
             Painel Comercial
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Visão estratégica em tempo real das negociações, vendas e clientes da sua empresa.
+            Visão estratégica em tempo real das negociações, vendas, clientes, equipe e comissões da sua empresa.
           </p>
         </div>
 
         {/* Controles de Período e Ação */}
-        <div className="flex items-center space-x-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="inline-flex rounded-xl bg-slate-200/80 p-1 text-xs font-semibold text-slate-600">
             <button
               type="button"
@@ -125,139 +142,213 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Cards de Métricas (KPIs) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Cards de Métricas Principais (6 KPIs Comerciais & Comissões) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* Faturamento */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Faturamento Total
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Faturamento
             </span>
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+            <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="mt-2">
+            <span className="text-lg font-black text-slate-900 tracking-tight block">
               {formatCurrency(totalRevenue)}
             </span>
-            <div className="mt-1 flex items-center space-x-1.5 text-xs text-emerald-600 font-semibold">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>+18.4% vs. período anterior</span>
-            </div>
+            <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
+              +18.4% no mês
+            </span>
           </div>
         </div>
 
-        {/* Vendas Realizadas */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+        {/* Vendas Concluídas */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Vendas Concluídas
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Vendas
             </span>
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
               <ShoppingCart className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="mt-2">
+            <span className="text-lg font-black text-slate-900 tracking-tight block">
               {completedSalesCount} pedidos
             </span>
-            <div className="mt-1 flex items-center space-x-1.5 text-xs text-blue-600 font-semibold">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>Histórico ativo e consistente</span>
-            </div>
+            <span className="text-[10px] text-blue-600 font-semibold block mt-0.5">
+              100% faturadas
+            </span>
           </div>
         </div>
 
         {/* Ticket Médio */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
               Ticket Médio
             </span>
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+            <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg">
               <Sparkles className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="mt-2">
+            <span className="text-lg font-black text-slate-900 tracking-tight block">
               {formatCurrency(avgTicket)}
             </span>
-            <div className="mt-1 flex items-center space-x-1.5 text-xs text-indigo-600 font-semibold">
-              <span>Negociações de alto valor</span>
-            </div>
+            <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+              Por pedido concluído
+            </span>
           </div>
         </div>
 
         {/* Clientes Ativos */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Clientes na Carteira
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Clientes Ativos
             </span>
-            <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+            <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-lg">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 tracking-tight">
-              {activeCustomersCount} ativos
+          <div className="mt-2">
+            <span className="text-lg font-black text-slate-900 tracking-tight block">
+              {activeCustomersCount} clientes
             </span>
-            <div className="mt-1 text-xs text-slate-500">
-              {customers.filter((c) => c.type === 'PJ').length} PJ e{' '}
-              {customers.filter((c) => c.type === 'PF').length} PF
+            <span className="text-[10px] text-cyan-600 font-semibold block mt-0.5">
+              Carteira monitorada
+            </span>
+          </div>
+        </div>
+
+        {/* Comissões Pendentes */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Comissões Pend.
+            </span>
+            <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+              <Clock className="w-4 h-4" />
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Seção Gráfica: Evolução de Vendas */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">Evolução do Faturamento</h2>
-            <p className="text-xs text-slate-500">Volume de negociações consolidadas no período selecionado</p>
+          <div className="mt-2">
+            <span className="text-lg font-black text-amber-600 tracking-tight block">
+              {formatCurrency(pendingCommissionsTotal)}
+            </span>
+            <Link href="/comissoes" className="text-[10px] text-amber-700 hover:underline font-semibold block mt-0.5">
+              Gerenciar pagamentos →
+            </Link>
           </div>
-          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-            Atualizado Hoje
-          </span>
         </div>
 
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} />
-              <YAxis
-                stroke="#94a3b8"
-                fontSize={12}
-                tickLine={false}
-                tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
-              />
-              <Tooltip
-                formatter={(value: any) => [formatCurrency(Number(value)), 'Faturamento']}
-                contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="total"
-                stroke="#2563eb"
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorRevenue)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+        {/* Comissões Pagas */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Comissões Pagas
+            </span>
+            <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <span className="text-lg font-black text-emerald-600 tracking-tight block">
+              {formatCurrency(paidCommissionsTotal)}
+            </span>
+            <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+              Histórico quitado
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Grid Duplo: Top Clientes e Top Produtos */}
+      {/* Gráficos Estratégicos: Faturamento Temporal & Vendas por Profissional */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Gráfico 1: Evolução do Faturamento (8 colunas) */}
+        <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Evolução do Faturamento</h3>
+              <p className="text-xs text-slate-500">Histórico de negociações e fechamentos diários</p>
+            </div>
+            <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full w-fit">
+              Tendência de Alta
+            </span>
+          </div>
+
+          <div className="h-64 mt-4 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                <YAxis
+                  stroke="#94a3b8"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  formatter={(value: any) => [formatCurrency(Number(value)), 'Faturamento']}
+                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="total"
+                  stroke="#2563eb"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorRevenue)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Gráfico 2: Desempenho por Profissional (5 colunas) */}
+        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div className="pb-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Vendas por Profissional</h3>
+              <p className="text-xs text-slate-500">Volume gerado por vendedor / especialista</p>
+            </div>
+            <Link href="/profissionais" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+              Equipe →
+            </Link>
+          </div>
+
+          <div className="h-64 mt-4 w-full">
+            {professionalChartData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                Nenhum profissional com vendas registradas ainda.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={professionalChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip
+                    formatter={(value: any) => [formatCurrency(Number(value)), 'Total Vendido']}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                  />
+                  <Bar dataKey="total" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Grid Duplo: Top Clientes e Produtos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Clientes Mais Valiosos */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
@@ -273,16 +364,8 @@ export default function DashboardPage() {
 
           <div className="divide-y divide-slate-100 mt-2">
             {topCustomers.length === 0 ? (
-              <div className="py-8 text-center">
-                <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs text-slate-500 font-medium">Nenhum cliente cadastrado ainda.</p>
-                <Link
-                  href="/clientes/novo"
-                  className="mt-2 inline-flex items-center space-x-1 text-xs font-bold text-blue-600 hover:text-blue-700"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Cadastrar primeiro cliente</span>
-                </Link>
+              <div className="py-8 text-center text-xs text-slate-400">
+                Nenhum cliente cadastrado ainda.
               </div>
             ) : (
               topCustomers.map((cust, idx) => (
@@ -317,12 +400,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Produtos em Destaque */}
+        {/* Produtos em Destaque Comercial */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Produtos em Destaque Comercial</h3>
-              <p className="text-xs text-slate-500">Itens com maior margem e rotatividade no catálogo</p>
+              <p className="text-xs text-slate-500">Itens com maior valor agregado e margem</p>
             </div>
             <Link href="/produtos" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
               Catálogo →
@@ -331,26 +414,22 @@ export default function DashboardPage() {
 
           <div className="divide-y divide-slate-100 mt-2">
             {topProducts.length === 0 ? (
-              <div className="py-8 text-center">
-                <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs text-slate-500 font-medium">Nenhum produto cadastrado no catálogo.</p>
-                <Link
-                  href="/produtos/novo"
-                  className="mt-2 inline-flex items-center space-x-1 text-xs font-bold text-blue-600 hover:text-blue-700"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Cadastrar primeiro produto</span>
-                </Link>
+              <div className="py-8 text-center text-xs text-slate-400">
+                Nenhum produto cadastrado no catálogo.
               </div>
             ) : (
-              topProducts.map((prod, idx) => (
+              topProducts.map((prod) => (
                 <div key={prod.id} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
                   <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-slate-100 rounded-xl text-slate-600">
-                      <Package className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">
+                    {prod.image_url ? (
+                      <img src={prod.image_url} alt={prod.name} className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
+                    ) : (
+                      <div className="p-2 bg-slate-100 rounded-xl text-slate-600 shrink-0">
+                        <Package className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="truncate">
+                      <span className="text-xs font-bold text-slate-800 block truncate max-w-xs">
                         {prod.name}
                       </span>
                       <span className="text-[11px] text-slate-400">
@@ -358,12 +437,12 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <span className="text-xs font-black text-blue-700 block">
                       {formatCurrency(prod.selling_price)}
                     </span>
-                    <span className="text-[10px] text-slate-500">
-                      Mín: {formatCurrency(prod.min_price)}
+                    <span className="text-[10px] text-emerald-600 font-medium">
+                      {prod.commission_type === 'PERCENTAGE' ? `${prod.commission_value}% comissão` : prod.commission_type === 'FIXED' ? `${formatCurrency(prod.commission_value)}/un` : 'Sem comissão'}
                     </span>
                   </div>
                 </div>

@@ -14,14 +14,18 @@ import {
   Sliders,
   TrendingUp,
   Sparkles,
+  Award,
+  DollarSign,
 } from 'lucide-react';
 import InstallPWAButton from '@/components/pwa/InstallPWAButton';
 
-const mainNavigation = [
+const commercialNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Vendas', href: '/vendas', icon: ShoppingCart },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Produtos', href: '/produtos', icon: Package },
+  { name: 'Profissionais', href: '/profissionais', icon: Award },
+  { name: 'Comissões', href: '/comissoes', icon: DollarSign },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
 
@@ -69,7 +73,7 @@ export default function Sidebar() {
             Comercial
           </span>
           <nav className="mt-2 space-y-1">
-            {mainNavigation.map((item) => {
+            {commercialNavigation.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
               return (
@@ -124,7 +128,7 @@ export default function Sidebar() {
 
       {/* Footer Info */}
       <div className="p-4 border-t border-slate-800 bg-slate-950/40 text-[11px] text-slate-400 flex items-center justify-between">
-        <span>NegociaPro v1.0</span>
+        <span>NegociaPro v1.2</span>
         <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-semibold text-[10px]">
           Online
         </span>

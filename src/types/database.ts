@@ -1,6 +1,8 @@
 export type UserRole = 'ADMIN' | 'GERENTE' | 'VENDEDOR';
 export type CustomerType = 'PF' | 'PJ';
 export type SaleStatus = 'DRAFT' | 'COMPLETED' | 'CANCELLED';
+export type CommissionType = 'NONE' | 'PERCENTAGE' | 'FIXED';
+export type CommissionStatus = 'PENDENTE' | 'APROVADA' | 'PAGA' | 'CANCELADA';
 
 export interface Company {
   id: string;
@@ -51,6 +53,27 @@ export interface Profile {
   company?: Company;
 }
 
+export interface Professional {
+  id: string;
+  company_id: string;
+  name: string;
+  document?: string | null; // CPF opcional
+  phone?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  role_title: string;
+  active: boolean;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Métricas agregadas
+  sales_count?: number;
+  total_sales?: number;
+  commission_earned?: number;
+  commission_paid?: number;
+  commission_pending?: number;
+}
+
 export interface ProductCategory {
   id: string;
   company_id: string;
@@ -75,6 +98,9 @@ export interface Product {
   current_stock: number;
   min_stock: number;
   active: boolean;
+  image_url?: string | null;
+  commission_type: CommissionType;
+  commission_value: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -127,6 +153,10 @@ export interface SaleItem {
   unit_price: number;
   discount: number;
   total: number;
+  // Snapshots de comissão imutáveis
+  commission_type_snapshot?: CommissionType;
+  commission_value_snapshot?: number;
+  commission_amount?: number;
 }
 
 export interface Sale {
@@ -136,11 +166,14 @@ export interface Sale {
   customer?: Customer;
   seller_id: string;
   seller?: Profile;
+  professional_id?: string | null;
+  professional?: Professional;
   sale_number: number;
   status: SaleStatus;
   subtotal: number;
   discount: number;
   total: number;
+  commission_total: number;
   payment_method_id?: string | null;
   payment_method?: PaymentMethod;
   notes?: string | null;
@@ -148,6 +181,27 @@ export interface Sale {
   created_at: string;
   updated_at: string;
   items?: SaleItem[];
+}
+
+export interface CommissionRecord {
+  id: string;
+  company_id: string;
+  professional_id: string;
+  professional_name: string;
+  sale_id: string;
+  sale_number: number;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  sale_date: string;
+  sale_total: number;
+  commission_amount: number;
+  status: CommissionStatus;
+  paid_at?: string | null;
+  paid_by_name?: string | null;
+  paid_amount?: number;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PriceHistoryRecord {

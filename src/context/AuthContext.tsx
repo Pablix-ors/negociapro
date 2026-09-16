@@ -54,35 +54,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('negociapro_user', JSON.stringify(DEMO_USER));
       localStorage.setItem('negociapro_company', JSON.stringify(DEMO_COMPANY));
     } else {
-      // Conta real de usuário: cria perfil novo e limpa dados de demonstração
-      const newUserProfile: Profile = {
-        id: `usr-${Date.now()}`,
-        company_id: `comp-${Date.now()}`,
-        name: email.split('@')[0],
-        email: email,
-        role: 'ADMIN',
-        active: true,
-      };
-      const newCompanyProfile: Company = {
-        id: newUserProfile.company_id,
-        name: 'Minha Empresa',
-        trade_name: 'Minha Empresa',
-        cnpj: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setUser(newUserProfile);
-      setCompany(newCompanyProfile);
-      localStorage.setItem('negociapro_user', JSON.stringify(newUserProfile));
-      localStorage.setItem('negociapro_company', JSON.stringify(newCompanyProfile));
-      // Se não existir dados próprios salvos, limpa demos
-      const savedCust = localStorage.getItem('negociapro_customers');
-      if (savedCust && savedCust.includes('cust-01')) {
-        localStorage.removeItem('negociapro_customers');
-        localStorage.removeItem('negociapro_products');
-        localStorage.removeItem('negociapro_sales');
-        localStorage.removeItem('negociapro_history');
-        localStorage.removeItem('negociapro_notifications');
+      // Verificar se o usuário já foi cadastrado na lista da equipe/empresa
+      let matchedProfile: Profile | null = null;
+      try {
+        const rawUsers = localStorage.getItem('negociapro_users_list');
+        if (rawUsers) {
+          const list: Profile[] = JSON.parse(rawUsers);
+          matchedProfile = list.find(u => u.email.toLowerCase() === email.trim().toLowerCase()) || null;
+        }
+      } catch {}
+
+      const currentCompanyStr = localStorage.getItem('negociapro_company');
+      let currentCompany: Company = DEMO_COMPANY;
+      if (currentCompanyStr) {
+        try { currentCompany = JSON.parse(currentCompanyStr); } catch {}
+      }
+
+      if (matchedProfile) {
+        // Usuário membro da equipe logando com seu perfil e cargo definido
+        setUser(matchedProfile);
+        setCompany(currentCompany);
+        localStorage.setItem('negociapro_user', JSON.stringify(matchedProfile));
+      } else {
+        // Conta nova independente: cria perfil novo
+        const newUserProfile: Profile = {
+          id: `usr-${Date.now()}`,
+          company_id: currentCompany.id,
+          name: email.split('@')[0],
+          email: email.trim().toLowerCase(),
+          role: 'ADMIN',
+          active: true,
+        };
+        setUser(newUserProfile);
+        setCompany(currentCompany);
+        localStorage.setItem('negociapro_user', JSON.stringify(newUserProfile));
       }
     }
     setIsLoading(false);
@@ -155,6 +160,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string): Promise<{ success: boolean; message?: string }> => {
     try {
+      // 1. Tentar envio direto e confiável via Resend
+      const resendResponse = await fetch('/api/auth/recuperar-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (resendResponse.ok) {
+        const data = await resendResponse.json();
+        return {
+          success: true,
+          message: data.message || 'Link seguro de recuperação enviado para seu e-mail pelo Resend!',
+        };
+      }
+
+      // 2. Fallback para Supabase se a rota local falhar
       const { createClient } = await import('@/lib/supabase/client');
       const supabase = createClient();
       const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';

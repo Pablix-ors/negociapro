@@ -17,6 +17,9 @@ import {
   ArrowRight,
   Sparkles,
   Info,
+  Award,
+  DollarSign,
+  Percent,
 } from 'lucide-react';
 
 interface CartItem {
@@ -25,14 +28,18 @@ interface CartItem {
   unit_price: number;
   discount: number;
   total: number;
+  commission_type_snapshot: 'NONE' | 'PERCENTAGE' | 'FIXED';
+  commission_value_snapshot: number;
+  commission_amount: number;
 }
 
 export default function NovaVendaPage() {
   const router = useRouter();
-  const { customers, products, createSale } = useData();
+  const { customers, products, professionals, createSale } = useData();
 
   // Estado da Venda
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [unitPrice, setUnitPrice] = useState<number>(0);
@@ -44,6 +51,12 @@ export default function NovaVendaPage() {
       setSelectedCustomerId(customers[0].id);
     }
   }, [customers, selectedCustomerId]);
+
+  React.useEffect(() => {
+    if (professionals.length > 0 && !selectedProfessionalId) {
+      setSelectedProfessionalId(professionals[0].id);
+    }
+  }, [professionals, selectedProfessionalId]);
 
   React.useEffect(() => {
     if (products.length > 0 && !selectedProductId) {
@@ -59,6 +72,7 @@ export default function NovaVendaPage() {
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
 
   const currentCustomer = customers.find((c) => c.id === selectedCustomerId);
+  const currentProfessional = professionals.find((p) => p.id === selectedProfessionalId);
   const currentProduct = products.find((p) => p.id === selectedProductId);
 
   // Atualizar preço padrão ao selecionar outro produto
@@ -71,18 +85,36 @@ export default function NovaVendaPage() {
     }
   };
 
+  // Cálculo da comissão estimada do item em edição
+  const calculateItemCommission = () => {
+    if (!currentProduct || currentProduct.commission_type === 'NONE') return 0;
+    const itemTotal = Math.max(0, quantity * unitPrice - discount);
+    if (currentProduct.commission_type === 'PERCENTAGE') {
+      return Number(((itemTotal * currentProduct.commission_value) / 100).toFixed(2));
+    }
+    if (currentProduct.commission_type === 'FIXED') {
+      return Number((quantity * currentProduct.commission_value).toFixed(2));
+    }
+    return 0;
+  };
+
   // Adicionar item ao carrinho
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductId || quantity <= 0 || unitPrice < 0) return;
 
-    const itemTotal = quantity * unitPrice - discount;
+    const itemTotal = Math.max(0, quantity * unitPrice - discount);
+    const commAmount = calculateItemCommission();
+
     const newItem: CartItem = {
       product_id: selectedProductId,
       quantity,
       unit_price: unitPrice,
       discount,
-      total: Math.max(0, itemTotal),
+      total: itemTotal,
+      commission_type_snapshot: currentProduct?.commission_type || 'NONE',
+      commission_value_snapshot: currentProduct?.commission_value || 0,
+      commission_amount: commAmount,
     };
 
     setCartItems([...cartItems, newItem]);
@@ -97,13 +129,18 @@ export default function NovaVendaPage() {
   const subtotal = cartItems.reduce((acc, item) => acc + item.quantity * item.unit_price, 0);
   const totalDiscount = cartItems.reduce((acc, item) => acc + item.discount, 0);
   const grandTotal = subtotal - totalDiscount;
+  const totalCommission = cartItems.reduce((acc, item) => acc + item.commission_amount, 0);
 
-  // Finalizar Venda com gravação atômica em price_history
+  // Validação de Preço Mínimo
+  const isBelowMinPrice = currentProduct && unitPrice - discount / quantity < currentProduct.min_price;
+
+  // Finalizar Venda com gravação atômica em price_history e comissão
   const handleFinishSale = () => {
     if (cartItems.length === 0 || !selectedCustomerId) return;
 
     createSale({
       customer_id: selectedCustomerId,
+      professional_id: selectedProfessionalId || undefined,
       items: cartItems,
       notes,
     });
@@ -128,7 +165,7 @@ export default function NovaVendaPage() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Selecione o cliente e os produtos. O sistema exibe automaticamente os preços negociados anteriormente.
+            Selecione o cliente, o profissional responsável e os produtos. Visualize os preços negociados anteriormente e as comissões calculadas.
           </p>
         </div>
       </div>
@@ -142,79 +179,130 @@ export default function NovaVendaPage() {
           <div>
             <h3 className="text-lg font-black">Venda Finalizada com Sucesso!</h3>
             <p className="text-xs text-emerald-100 mt-0.5">
-              O histórico de preços do cliente foi atualizado automaticamente. Redirecionando...
+              O histórico de preços e a comissão do profissional foram registrados com snapshot imutável. Redirecionando...
             </p>
           </div>
         </div>
       )}
 
-      {/* Grid Principal: Formulário de Adição & Inteligência de Histórico à Esquerda, Resumo do Pedido à Direita */}
+      {/* Grid Principal: Formulário à Esquerda, Resumo à Direita */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Painel de Configuração da Linha de Venda (8 colunas) */}
+        {/* Painel Esquerdo: Seleção de Cliente, Profissional e Produto */}
         <div className="lg:col-span-7 space-y-6">
-          {/* Card 1: Seleção do Cliente */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                1. Selecione o Cliente
-              </label>
-              <button
-                type="button"
-                onClick={() => router.push('/clientes/novo')}
-                className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
-              >
-                + Novo Cliente
-              </button>
-            </div>
-
-            {customers.length === 0 ? (
-              <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center">
-                <p className="text-xs text-slate-500 mb-2">Sua carteira de clientes ainda está vazia.</p>
+          {/* Card 1: Seleção do Cliente e Profissional Responsável */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                  1. Cliente da Negociação
+                </label>
                 <button
                   type="button"
                   onClick={() => router.push('/clientes/novo')}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-xs hover:bg-blue-700"
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
                 >
-                  Cadastrar Primeiro Cliente
+                  + Novo Cliente
                 </button>
               </div>
-            ) : (
-              <>
+
+              {customers.length === 0 ? (
+                <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center">
+                  <p className="text-xs text-slate-500 mb-2">Sua carteira de clientes ainda está vazia.</p>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/clientes/novo')}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-xs hover:bg-blue-700"
+                  >
+                    Cadastrar Primeiro Cliente
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <select
+                      value={selectedCustomerId}
+                      onChange={(e) => setSelectedCustomerId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-all"
+                    >
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.trade_name ? `${c.trade_name} (${c.name})` : c.name} — {c.document} [{c.type}]
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {currentCustomer && (
+                    <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                      <div>
+                        <span className="font-bold text-slate-800">{currentCustomer.name}</span>
+                        <span className="block text-[11px] text-slate-400">
+                          {currentCustomer.city}/{currentCustomer.state} • {currentCustomer.phone}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block">Total já comprado</span>
+                        <span className="font-bold text-blue-700">
+                          {formatCurrency(currentCustomer.total_purchased)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Profissional Responsável pela Venda */}
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-1.5">
+                  <Award className="w-4 h-4 text-blue-600" />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Profissional Responsável
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push('/profissionais')}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
+                >
+                  Gerenciar Equipe
+                </button>
+              </div>
+
+              {professionals.length === 0 ? (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+                  <span>Nenhum profissional cadastrado. A comissão ficará zerada.</span>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/profissionais')}
+                    className="font-bold underline"
+                  >
+                    Cadastrar
+                  </button>
+                </div>
+              ) : (
                 <div className="relative">
                   <select
-                    value={selectedCustomerId}
-                    onChange={(e) => setSelectedCustomerId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    value={selectedProfessionalId}
+                    onChange={(e) => setSelectedProfessionalId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   >
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.trade_name ? `${c.trade_name} (${c.name})` : c.name} — {c.document} [{c.type}]
-                      </option>
-                    ))}
+                    <option value="">Nenhum Profissional Vinculado</option>
+                    {professionals
+                      .filter((p) => p.active)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.role_title})
+                        </option>
+                      ))}
                   </select>
                 </div>
-
-                {currentCustomer && (
-                  <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                    <div>
-                      <span className="font-bold text-slate-800">{currentCustomer.name}</span>
-                      <span className="block text-[11px] text-slate-400">
-                        {currentCustomer.city}/{currentCustomer.state} • {currentCustomer.phone}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">Total já comprado</span>
-                      <span className="font-bold text-blue-700">
-                        {formatCurrency(currentCustomer.total_purchased)}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Card 2: Seleção do Produto & Valores */}
+          {/* Card 2: Seleção do Produto & Valores de Negociação */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -245,106 +333,162 @@ export default function NovaVendaPage() {
                 <select
                   value={selectedProductId}
                   onChange={(e) => handleProductChange(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-all"
                 >
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} (SKU: {p.sku || '-'}) — Estoque: {p.current_stock} {p.unit} — Tabela: {formatCurrency(p.selling_price)}
+                      {p.name} {p.sku ? `[${p.sku}]` : ''} — Tabela: {formatCurrency(p.selling_price)} (Estoque: {p.current_stock} {p.unit})
                     </option>
                   ))}
                 </select>
+
+                {currentProduct && (
+                  <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center space-x-3">
+                    {currentProduct.image_url ? (
+                      <img
+                        src={currentProduct.image_url}
+                        alt={currentProduct.name}
+                        className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-slate-200 text-slate-400 flex items-center justify-center shrink-0">
+                        <Package className="w-6 h-6" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className="font-bold text-slate-800 text-xs block truncate">{currentProduct.name}</span>
+                      <span className="text-[11px] text-slate-500">
+                        Marca: {currentProduct.brand || '-'} • Unidade: {currentProduct.unit}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] text-slate-400 block">Regra de Comissão</span>
+                      <span className="text-xs font-bold text-emerald-600">
+                        {currentProduct.commission_type === 'PERCENTAGE'
+                          ? `${currentProduct.commission_value}%`
+                          : currentProduct.commission_type === 'FIXED'
+                          ? `${formatCurrency(currentProduct.commission_value)} / un`
+                          : 'Sem comissão'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Inclusão do Componente Principal: Histórico de Preços para este Cliente */}
-            {currentProduct && selectedCustomerId && (
-              <CustomerProductPriceHistory
-                customerId={selectedCustomerId}
-                productId={selectedProductId}
-                currentProduct={currentProduct}
-                proposedPrice={unitPrice}
-                onApplyPrice={(price) => setUnitPrice(price)}
-              />
+            {/* Histórico Automático de Preços Negociados */}
+            {selectedCustomerId && selectedProductId && currentProduct && (
+              <div className="pt-2">
+                <CustomerProductPriceHistory
+                  customerId={selectedCustomerId}
+                  productId={selectedProductId}
+                  currentProduct={currentProduct}
+                  proposedPrice={unitPrice - (discount / (quantity || 1))}
+                  onApplyPrice={(price) => {
+                    setUnitPrice(price);
+                    setDiscount(0);
+                  }}
+                />
+              </div>
             )}
 
             {/* Inputs de Quantidade, Preço Unitário e Desconto */}
-            <div className="grid grid-cols-3 gap-3 pt-2">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Quantidade
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                />
+            <form onSubmit={handleAddItem} className="space-y-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Quantidade ({currentProduct?.unit || 'UN'})
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Preço Unitário (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={unitPrice}
+                    onChange={(e) => setUnitPrice(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Desconto Total (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={discount}
+                    onChange={(e) => setDiscount(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-red-600 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Preço Unitário (R$)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={unitPrice}
-                  onChange={(e) => setUnitPrice(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                />
-              </div>
+              {/* Trava de Preço Mínimo */}
+              {isBelowMinPrice && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center space-x-2 text-xs text-red-800 font-semibold">
+                  <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>
+                    Atenção: O preço efetivo unitário (R$ {(unitPrice - discount / quantity).toFixed(2)}) está abaixo do preço mínimo permitido de {formatCurrency(currentProduct?.min_price)}.
+                  </span>
+                </div>
+              )}
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Desconto Total (R$)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={discount}
-                  onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                />
-              </div>
-            </div>
-
-            {/* Botão de Adicionar ao Pedido */}
-            <div className="pt-2 flex items-center justify-between border-t border-slate-100">
-              <div className="text-xs">
-                <span className="text-slate-400">Total desta linha: </span>
-                <span className="text-base font-black text-slate-900">
-                  {formatCurrency(Math.max(0, quantity * unitPrice - discount))}
-                </span>
-              </div>
+              {/* Prévia da Comissão do Item */}
+              {currentProduct && currentProduct.commission_type !== 'NONE' && (
+                <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl flex items-center justify-between text-xs text-emerald-900">
+                  <span className="flex items-center space-x-1.5 font-medium">
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    <span>Comissão estimada deste item:</span>
+                  </span>
+                  <span className="font-black text-emerald-700">
+                    {formatCurrency(calculateItemCommission())}
+                  </span>
+                </div>
+              )}
 
               <button
-                type="button"
-                onClick={handleAddItem}
-                className="inline-flex items-center space-x-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95"
+                type="submit"
+                className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-98 flex items-center justify-center space-x-2"
               >
                 <Plus className="w-4 h-4" />
-                <span>Adicionar ao Pedido</span>
+                <span>Adicionar Produto ao Pedido</span>
               </button>
-            </div>
+            </form>
           </div>
         </div>
 
-        {/* Resumo do Pedido & Fechamento (5 colunas) */}
+        {/* Painel Direito: Resumo do Pedido & Comissões */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between min-h-[460px]">
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Itens do Pedido ({cartItems.length})
-                </h3>
+                <div className="flex items-center space-x-2">
+                  <ShoppingCart className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                    Resumo do Pedido ({cartItems.length} itens)
+                  </h3>
+                </div>
                 {cartItems.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setCartItems([])}
-                    className="text-[11px] text-red-600 hover:underline font-medium"
+                    className="text-[11px] text-red-600 hover:underline"
                   >
                     Limpar
                   </button>
@@ -356,7 +500,7 @@ export default function NovaVendaPage() {
                 <div className="py-12 text-center">
                   <ShoppingCart className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-xs text-slate-400">
-                    Nenhum item adicionado ainda. Selecione um produto à esquerda e clique em &quot;Adicionar ao Pedido&quot;.
+                    Nenhum item adicionado ainda. Selecione um produto à esquerda e clique em &quot;Adicionar Produto ao Pedido&quot;.
                   </p>
                 </div>
               ) : (
@@ -373,6 +517,11 @@ export default function NovaVendaPage() {
                             {item.quantity} {prod?.unit || 'un'} × {formatCurrency(item.unit_price)}
                             {item.discount > 0 && ` (Desc. ${formatCurrency(item.discount)})`}
                           </span>
+                          {item.commission_amount > 0 && (
+                            <span className="text-[10px] text-emerald-700 block font-medium">
+                              Comissão: {formatCurrency(item.commission_amount)}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center space-x-3">
                           <span className="text-xs font-black text-slate-900">
@@ -425,7 +574,7 @@ export default function NovaVendaPage() {
                 </div>
               </div>
 
-              {/* Totais Finais */}
+              {/* Totais Finais com Destaque para Profissional e Comissão */}
               <div className="mt-4 pt-4 border-t border-slate-100 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-500">
                   <span>Subtotal:</span>
@@ -435,8 +584,16 @@ export default function NovaVendaPage() {
                   <span>Descontos:</span>
                   <span className="text-red-600 font-medium">- {formatCurrency(totalDiscount)}</span>
                 </div>
-                <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-100">
-                  <span>Total Final:</span>
+                <div className="flex justify-between text-slate-700 font-semibold pt-1 border-t border-slate-100">
+                  <span>Profissional Responsável:</span>
+                  <span className="text-blue-700">{currentProfessional ? currentProfessional.name : 'Nenhum'}</span>
+                </div>
+                <div className="flex justify-between text-slate-700 font-semibold">
+                  <span>Comissão Total Calculada:</span>
+                  <span className="text-emerald-600 font-bold">{formatCurrency(totalCommission)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
+                  <span>Total Final da Venda:</span>
                   <span className="text-xl text-blue-700">{formatCurrency(grandTotal)}</span>
                 </div>
               </div>

@@ -1,13 +1,20 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Customer, Product, Sale, PriceHistorySummary, PriceHistoryRecord } from '@/types/database';
-import { DEMO_CUSTOMERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_PRICE_HISTORY_MAP } from '@/lib/mockData';
+import { Customer, Product, Sale, PriceHistorySummary, PriceHistoryRecord, Professional, CommissionRecord } from '@/types/database';
+import {
+  DEMO_CUSTOMERS,
+  DEMO_PRODUCTS,
+  DEMO_SALES,
+  DEMO_PRICE_HISTORY_MAP,
+  DEMO_PROFESSIONALS,
+  DEMO_COMMISSION_RECORDS,
+} from '@/lib/mockData';
 import { useAuth } from './AuthContext';
 
 export interface AppNotification {
   id: string;
-  type: 'PRICE_ALERT' | 'MIN_PRICE' | 'STOCK_ALERT' | 'SALE_COMPLETED';
+  type: 'PRICE_ALERT' | 'MIN_PRICE' | 'STOCK_ALERT' | 'SALE_COMPLETED' | 'COMMISSION_ALERT';
   title: string;
   message: string;
   timestamp: string;
@@ -19,6 +26,8 @@ interface DataContextType {
   customers: Customer[];
   products: Product[];
   sales: Sale[];
+  professionals: Professional[];
+  commissions: CommissionRecord[];
   notifications: AppNotification[];
   unreadNotificationsCount: number;
   markNotificationAsRead: (id: string) => void;
@@ -30,19 +39,27 @@ interface DataContextType {
   addProduct: (product: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Product;
   updateProduct: (id: string, product: Partial<Product>) => void;
   adjustStock: (productId: string, quantityChange: number, reason: string) => void;
+  addProfessional: (prof: Omit<Professional, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Professional;
+  updateProfessional: (id: string, prof: Partial<Professional>) => void;
+  deactivateProfessional: (id: string) => void;
   createSale: (saleData: {
     customer_id: string;
+    professional_id?: string;
     items: Array<{
       product_id: string;
       quantity: number;
       unit_price: number;
       discount: number;
       total: number;
+      commission_type_snapshot?: 'NONE' | 'PERCENTAGE' | 'FIXED';
+      commission_value_snapshot?: number;
+      commission_amount?: number;
     }>;
     payment_method_id?: string;
     notes?: string;
   }) => Sale;
   cancelSale: (id: string) => void;
+  markCommissionAsPaid: (commissionId: string, paidAmount?: number, notes?: string) => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -75,25 +92,37 @@ const DEMO_NOTIFICATIONS: AppNotification[] = [
     read: true,
     link: '/vendas',
   },
+  {
+    id: 'notif-4',
+    type: 'COMMISSION_ALERT',
+    title: 'Nova Comissão Gerada',
+    message: 'Carlos Vendedor Master gerou R$ 65,80 em comissões na Venda #1001.',
+    timestamp: 'Há 4 horas',
+    read: false,
+    link: '/comissoes',
+  },
 ];
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { user, company } = useAuth();
-  const isDemo = !user || user.email === 'admin@negociapro.com.br';
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
   const [priceHistoryMap, setPriceHistoryMap] = useState<Record<string, PriceHistorySummary>>({});
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
-  // Carregar dados de acordo com o usuário (conta nova = zerada; conta demo = mock)
+  // Carregar dados de acordo com o usuário (persistência segura)
   useEffect(() => {
     const isDemoUser = !user || user.email === 'admin@negociapro.com.br';
 
     const savedCust = localStorage.getItem('negociapro_customers');
     const savedProd = localStorage.getItem('negociapro_products');
     const savedSales = localStorage.getItem('negociapro_sales');
+    const savedProfs = localStorage.getItem('negociapro_professionals');
+    const savedComms = localStorage.getItem('negociapro_commissions');
     const savedHist = localStorage.getItem('negociapro_history');
     const savedNotifs = localStorage.getItem('negociapro_notifications');
 
@@ -115,6 +144,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setSales(isDemoUser ? DEMO_SALES : []);
     }
 
+    if (savedProfs) {
+      try { setProfessionals(JSON.parse(savedProfs)); } catch {}
+    } else {
+      setProfessionals(isDemoUser ? DEMO_PROFESSIONALS : []);
+    }
+
+    if (savedComms) {
+      try { setCommissions(JSON.parse(savedComms)); } catch {}
+    } else {
+      setCommissions(isDemoUser ? DEMO_COMMISSION_RECORDS : []);
+    }
+
     if (savedHist) {
       try { setPriceHistoryMap(JSON.parse(savedHist)); } catch {}
     } else {
@@ -134,7 +175,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const markNotificationAsRead = (id: string) => {
-    const updated = notifications.map(n => n.id === id ? { ...n, read: true } : n);
+    const updated = notifications.map(n => (n.id === id ? { ...n, read: true } : n));
     saveNotifications(updated);
   };
 
@@ -169,12 +210,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('negociapro_sales', JSON.stringify(data));
   };
 
+  const saveProfsState = (data: Professional[]) => {
+    setProfessionals(data);
+    localStorage.setItem('negociapro_professionals', JSON.stringify(data));
+  };
+
+  const saveCommsState = (data: CommissionRecord[]) => {
+    setCommissions(data);
+    localStorage.setItem('negociapro_commissions', JSON.stringify(data));
+  };
+
   const saveHistoryState = (map: Record<string, PriceHistorySummary>) => {
     setPriceHistoryMap(map);
     localStorage.setItem('negociapro_history', JSON.stringify(map));
   };
 
-  // Consulta do histórico com cálculo de indicadores principais
   const getPriceHistory = (customerId: string, productId: string): PriceHistorySummary => {
     const key = `${customerId}_${productId}`;
     if (priceHistoryMap[key]) {
@@ -248,15 +298,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     saveProd(updated);
   };
 
-  // Finalização da Venda: Gravação da venda e geração automática e indelével de histórico de preços
+  // Módulo de Profissionais
+  const addProfessional = (profData: Omit<Professional, 'id' | 'company_id' | 'created_at' | 'updated_at'>): Professional => {
+    const newProf: Professional = {
+      ...profData,
+      id: `prof-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      active: true,
+      sales_count: 0,
+      total_sales: 0,
+      commission_earned: 0,
+      commission_paid: 0,
+      commission_pending: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const updated = [newProf, ...professionals];
+    saveProfsState(updated);
+    return newProf;
+  };
+
+  const updateProfessional = (id: string, updatedFields: Partial<Professional>) => {
+    const updated = professionals.map(p => (p.id === id ? { ...p, ...updatedFields, updated_at: new Date().toISOString() } : p));
+    saveProfsState(updated);
+  };
+
+  const deactivateProfessional = (id: string) => {
+    const updated = professionals.map(p => (p.id === id ? { ...p, active: false, updated_at: new Date().toISOString() } : p));
+    saveProfsState(updated);
+  };
+
+  // Finalização da Venda com Snapshot de Comissão e Vinculação de Profissional
   const createSale = (saleData: {
     customer_id: string;
+    professional_id?: string;
     items: Array<{
       product_id: string;
       quantity: number;
       unit_price: number;
       discount: number;
       total: number;
+      commission_type_snapshot?: 'NONE' | 'PERCENTAGE' | 'FIXED';
+      commission_value_snapshot?: number;
+      commission_amount?: number;
     }>;
     payment_method_id?: string;
     notes?: string;
@@ -265,7 +349,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const discount = saleData.items.reduce((acc, item) => acc + item.discount, 0);
     const total = subtotal - discount;
 
+    // Calcular comissão total por item (com base nas regras do produto ou snapshot enviado)
+    let totalSaleCommission = 0;
+    const enrichedItems = saleData.items.map((item, idx) => {
+      const prod = products.find(p => p.id === item.product_id);
+      const cType = item.commission_type_snapshot || prod?.commission_type || 'NONE';
+      const cVal = item.commission_value_snapshot !== undefined ? item.commission_value_snapshot : (prod?.commission_value || 0);
+
+      let itemCommission = 0;
+      if (saleData.professional_id && cType !== 'NONE') {
+        if (cType === 'PERCENTAGE') {
+          itemCommission = Number(((item.total * cVal) / 100).toFixed(2));
+        } else if (cType === 'FIXED') {
+          itemCommission = Number((item.quantity * cVal).toFixed(2));
+        }
+      }
+      totalSaleCommission += itemCommission;
+
+      return {
+        id: `si-${Date.now()}-${idx}`,
+        sale_id: '',
+        company_id: company?.id || 'demo-company',
+        product_id: item.product_id,
+        product: prod,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount: item.discount,
+        total: item.total,
+        commission_type_snapshot: cType,
+        commission_value_snapshot: cVal,
+        commission_amount: itemCommission,
+      };
+    });
+
     const currentCustomer = customers.find(c => c.id === saleData.customer_id);
+    const selectedProf = professionals.find(p => p.id === saleData.professional_id);
     const saleNumber = 1000 + sales.length + 1;
     const saleId = `sale-${Date.now()}`;
     const nowIso = new Date().toISOString();
@@ -277,33 +395,64 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       customer: currentCustomer,
       seller_id: user?.id || 'demo-user',
       seller: user || undefined,
+      professional_id: saleData.professional_id || null,
+      professional: selectedProf,
       sale_number: saleNumber,
       status: 'COMPLETED',
       subtotal,
       discount,
       total,
+      commission_total: Number(totalSaleCommission.toFixed(2)),
       notes: saleData.notes,
       sold_at: nowIso,
       created_at: nowIso,
       updated_at: nowIso,
-      items: saleData.items.map((item, idx) => ({
-        id: `si-${Date.now()}-${idx}`,
-        sale_id: saleId,
-        company_id: company?.id || 'demo-company',
-        product_id: item.product_id,
-        product: products.find(p => p.id === item.product_id),
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        discount: item.discount,
-        total: item.total,
-      })),
+      items: enrichedItems.map(i => ({ ...i, sale_id: saleId })),
     };
 
     // 1. Atualizar vendas
     const newSales = [createdSale, ...sales];
     saveSalesState(newSales);
 
-    // 2. Atualizar métricas do cliente
+    // 2. Criar registro de comissão se houver profissional e comissão > 0
+    if (selectedProf && totalSaleCommission > 0) {
+      const newCommission: CommissionRecord = {
+        id: `comm-${Date.now()}`,
+        company_id: company?.id || 'demo-company',
+        professional_id: selectedProf.id,
+        professional_name: selectedProf.name,
+        sale_id: saleId,
+        sale_number: saleNumber,
+        customer_id: currentCustomer?.id,
+        customer_name: currentCustomer?.name,
+        sale_date: nowIso,
+        sale_total: total,
+        commission_amount: Number(totalSaleCommission.toFixed(2)),
+        status: 'PENDENTE',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+      const updatedComms = [newCommission, ...commissions];
+      saveCommsState(updatedComms);
+
+      // Atualizar métricas acumuladas do profissional
+      const updatedProfs = professionals.map(p => {
+        if (p.id === selectedProf.id) {
+          return {
+            ...p,
+            sales_count: (p.sales_count || 0) + 1,
+            total_sales: (p.total_sales || 0) + total,
+            commission_earned: (p.commission_earned || 0) + totalSaleCommission,
+            commission_pending: (p.commission_pending || 0) + totalSaleCommission,
+            updated_at: nowIso,
+          };
+        }
+        return p;
+      });
+      saveProfsState(updatedProfs);
+    }
+
+    // 3. Atualizar métricas do cliente
     const updatedCustomers = customers.map(c => {
       if (c.id === saleData.customer_id) {
         return {
@@ -317,7 +466,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
     saveCust(updatedCustomers);
 
-    // 3. Atualizar estoque dos produtos
+    // 4. Atualizar estoque dos produtos
     const updatedProducts = products.map(p => {
       const soldItem = saleData.items.find(i => i.product_id === p.id);
       if (soldItem) {
@@ -330,12 +479,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
     saveProd(updatedProducts);
 
-    // 4. REGISTRAR NO HISTÓRICO DE PREÇOS (Core Feature do NegociaPro)
+    // 5. REGISTRAR NO HISTÓRICO DE PREÇOS
     const newHistoryMap = { ...priceHistoryMap };
 
     saleData.items.forEach(item => {
       const key = `${saleData.customer_id}_${item.product_id}`;
-      const effectiveUnitPrice = item.unit_price - (item.discount / item.quantity);
+      const effectiveUnitPrice = item.unit_price - item.discount / item.quantity;
 
       const newRecord: PriceHistoryRecord = {
         id: `hist-${Date.now()}-${item.product_id}`,
@@ -344,7 +493,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         product_id: item.product_id,
         sale_id: saleId,
         seller_id: user?.id || 'demo-user',
-        seller_name: user?.name || 'Vendedor',
+        seller_name: selectedProf ? selectedProf.name : user?.name || 'Vendedor',
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount: item.discount,
@@ -375,7 +524,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         last_price: effectiveUnitPrice,
         last_negotiation_date: nowIso,
         last_quantity: item.quantity,
-        last_seller_name: user?.name || 'Vendedor',
+        last_seller_name: selectedProf ? selectedProf.name : user?.name || 'Vendedor',
         min_price: minP,
         max_price: maxP,
         avg_price: Number(avgP.toFixed(2)),
@@ -396,6 +545,54 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return s;
     });
     saveSalesState(updated);
+
+    // Cancelar comissão correspondente
+    const updatedComms = commissions.map(c => {
+      if (c.sale_id === id) {
+        return { ...c, status: 'CANCELADA' as const, updated_at: new Date().toISOString() };
+      }
+      return c;
+    });
+    saveCommsState(updatedComms);
+  };
+
+  const markCommissionAsPaid = (commissionId: string, paidAmount?: number, notes?: string) => {
+    const nowIso = new Date().toISOString();
+    let targetProfId: string | null = null;
+    let finalAmount = 0;
+
+    const updatedComms = commissions.map(c => {
+      if (c.id === commissionId) {
+        targetProfId = c.professional_id;
+        finalAmount = paidAmount !== undefined ? paidAmount : c.commission_amount;
+        return {
+          ...c,
+          status: 'PAGA' as const,
+          paid_at: nowIso,
+          paid_by_name: user?.name || 'Administrador',
+          paid_amount: finalAmount,
+          notes: notes ? `${c.notes ? c.notes + ' • ' : ''}${notes}` : c.notes,
+          updated_at: nowIso,
+        };
+      }
+      return c;
+    });
+    saveCommsState(updatedComms);
+
+    if (targetProfId) {
+      const updatedProfs = professionals.map(p => {
+        if (p.id === targetProfId) {
+          return {
+            ...p,
+            commission_paid: (p.commission_paid || 0) + finalAmount,
+            commission_pending: Math.max(0, (p.commission_pending || 0) - finalAmount),
+            updated_at: nowIso,
+          };
+        }
+        return p;
+      });
+      saveProfsState(updatedProfs);
+    }
   };
 
   const unreadNotificationsCount = notifications.filter(n => !n.read).length;
@@ -406,6 +603,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         customers,
         products,
         sales,
+        professionals,
+        commissions,
         notifications,
         unreadNotificationsCount,
         markNotificationAsRead,
@@ -417,8 +616,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         addProduct,
         updateProduct,
         adjustStock,
+        addProfessional,
+        updateProfessional,
+        deactivateProfessional,
         createSale,
         cancelSale,
+        markCommissionAsPaid,
       }}
     >
       {children}

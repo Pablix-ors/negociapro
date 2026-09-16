@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
-import { CommissionType } from '@/types/database';
+import { CommissionType, Product } from '@/types/database';
 import {
   ArrowLeft,
   Check,
@@ -17,9 +17,13 @@ import {
   Percent,
 } from 'lucide-react';
 
-export default function NovoProdutoPage() {
+export default function EditarProdutoPage() {
   const router = useRouter();
-  const { addProduct } = useData();
+  const params = useParams();
+  const productId = params?.id as string;
+  const { products, updateProduct } = useData();
+
+  const product = products.find((p) => p.id === productId);
 
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -29,7 +33,7 @@ export default function NovoProdutoPage() {
   const [costPrice, setCostPrice] = useState<number>(0);
   const [sellingPrice, setSellingPrice] = useState<number>(0);
   const [minPrice, setMinPrice] = useState<number>(0);
-  const [currentStock, setCurrentStock] = useState<number>(100);
+  const [currentStock, setCurrentStock] = useState<number>(0);
   const [minStock, setMinStock] = useState<number>(10);
   const [description, setDescription] = useState('');
 
@@ -42,6 +46,42 @@ export default function NovoProdutoPage() {
   const [commissionValue, setCommissionValue] = useState<number>(0);
 
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (product) {
+      setName(product.name || '');
+      setSku(product.sku || '');
+      setBarcode(product.barcode || '');
+      setUnit(product.unit || 'UN');
+      setBrand(product.brand || '');
+      setCostPrice(product.cost_price || 0);
+      setSellingPrice(product.selling_price || 0);
+      setMinPrice(product.min_price || 0);
+      setCurrentStock(product.current_stock || 0);
+      setMinStock(product.min_stock || 0);
+      setDescription(product.description || '');
+      setImageUrl(product.image_url || '');
+      setCommissionType(product.commission_type || 'NONE');
+      setCommissionValue(product.commission_value || 0);
+    }
+  }, [product]);
+
+  if (!product) {
+    return (
+      <div className="max-w-4xl mx-auto p-12 text-center">
+        <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+        <h2 className="text-base font-bold text-slate-800">Produto não encontrado</h2>
+        <p className="text-xs text-slate-400 mt-1">O produto pode ter sido removido ou o identificador é inválido.</p>
+        <Link
+          href="/produtos"
+          className="mt-4 inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Voltar para Produtos</span>
+        </Link>
+      </div>
+    );
+  }
 
   // Upload com pré-validação (PNG, JPG, JPEG, WEBP, máx 5MB)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,7 +130,7 @@ export default function NovoProdutoPage() {
       return;
     }
 
-    addProduct({
+    updateProduct(product.id, {
       name,
       sku,
       barcode,
@@ -105,7 +145,6 @@ export default function NovoProdutoPage() {
       image_url: imageUrl || null,
       commission_type: commissionType,
       commission_value: commissionType === 'NONE' ? 0 : commissionValue,
-      active: true,
     });
 
     router.push('/produtos');
@@ -123,10 +162,10 @@ export default function NovoProdutoPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">
-            Cadastrar Novo Produto
+            Editar Produto: {product.name}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Configure margens, imagem, comissões de venda e regras de negociação comercial.
+            Atualize dados, foto, comissões de venda e parâmetros de negociação comercial.
           </p>
         </div>
       </div>
@@ -143,12 +182,12 @@ export default function NovoProdutoPage() {
         {/* Bloco 1: Imagem do Produto */}
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-            Imagem do Produto
+            Foto do Produto
           </h3>
           <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
             {imageUrl ? (
-              <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-blue-500 shadow-sm shrink-0 bg-white">
-                <img src={imageUrl} alt="Preview do produto" className="w-full h-full object-cover" />
+              <div className="relative w-28 h-28 rounded-2xl overflow-hidden border-2 border-blue-500 shadow-sm shrink-0 bg-white">
+                <img src={imageUrl} alt="Foto do produto" className="w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => setImageUrl('')}
@@ -159,8 +198,8 @@ export default function NovoProdutoPage() {
                 </button>
               </div>
             ) : (
-              <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 shrink-0 bg-white">
-                <ImageIcon className="w-7 h-7 mb-1" />
+              <div className="w-28 h-28 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 shrink-0 bg-white">
+                <ImageIcon className="w-8 h-8 mb-1 text-slate-300" />
                 <span className="text-[10px] font-medium">Sem imagem</span>
               </div>
             )}
@@ -168,7 +207,7 @@ export default function NovoProdutoPage() {
             <div className="flex-1 text-center sm:text-left">
               <label className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all shadow-md shadow-blue-600/20 active:scale-95">
                 <Upload className="w-4 h-4" />
-                <span>{imageLoading ? 'Carregando...' : imageUrl ? 'Trocar Imagem' : 'Enviar Imagem'}</span>
+                <span>{imageLoading ? 'Carregando...' : imageUrl ? 'Trocar Foto' : 'Enviar Foto'}</span>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp,image/jpg"
@@ -178,13 +217,13 @@ export default function NovoProdutoPage() {
                 />
               </label>
               <p className="text-[11px] text-slate-400 mt-1.5">
-                Formatos aceitos: JPG, PNG, WEBP (máx. 5MB). Otimizada automaticamente para listagens e vendas.
+                Formatos aceitos: JPG, PNG, WEBP (máx. 5MB). Esta foto aparecerá na listagem e na tela de venda.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Bloco 2: Dados do Produto */}
+        {/* Bloco 2: Identificação */}
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
             Identificação & Categorização
@@ -256,7 +295,7 @@ export default function NovoProdutoPage() {
           </div>
         </div>
 
-        {/* Bloco 3: Preços e Parâmetros Comerciais */}
+        {/* Bloco 3: Preços e Negociação */}
         <div className="pt-4 border-t border-slate-100">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
             Precificação & Parâmetros de Negociação
@@ -298,14 +337,11 @@ export default function NovoProdutoPage() {
                 onChange={(e) => setMinPrice(Number(e.target.value))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-amber-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-[10px] text-slate-400 mt-0.5 block">
-                Preços abaixo deste valor bloquearão a venda exigindo aprovação.
-              </span>
             </div>
           </div>
         </div>
 
-        {/* Bloco 4: Regras de Comissão para Profissionais */}
+        {/* Bloco 4: Comissão do Produto */}
         <div className="pt-4 border-t border-slate-100">
           <div className="flex items-center space-x-2 mb-3">
             <DollarSign className="w-4 h-4 text-emerald-600" />
@@ -313,9 +349,6 @@ export default function NovoProdutoPage() {
               Comissão do Profissional / Vendedor
             </h3>
           </div>
-          <p className="text-[11px] text-slate-500 mb-4">
-            Defina se este produto remunera o profissional com comissão percentual, fixa ou se não possui comissão.
-          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-emerald-50/40 p-4 rounded-2xl border border-emerald-100">
             <div>
@@ -344,24 +377,18 @@ export default function NovoProdutoPage() {
                     required
                     value={commissionValue}
                     onChange={(e) => setCommissionValue(Number(e.target.value))}
-                    placeholder={commissionType === 'PERCENTAGE' ? 'Ex: 10' : 'Ex: 15.00'}
                     className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-emerald-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                   />
                   <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">
                     {commissionType === 'PERCENTAGE' ? '%' : 'R$'}
                   </span>
                 </div>
-                {sellingPrice > 0 && commissionType === 'PERCENTAGE' && (
-                  <span className="text-[10px] text-emerald-700 font-semibold block mt-1">
-                    Estimativa: R$ {((sellingPrice * commissionValue) / 100).toFixed(2)} por unidade no preço padrão.
-                  </span>
-                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Bloco 5: Controle de Estoque */}
+        {/* Bloco 5: Estoque */}
         <div className="pt-4 border-t border-slate-100">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
             Controle de Estoque
@@ -403,7 +430,7 @@ export default function NovoProdutoPage() {
             className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
           >
             <Check className="w-4 h-4" />
-            <span>Salvar Produto</span>
+            <span>Salvar Alterações</span>
           </button>
         </div>
       </form>
