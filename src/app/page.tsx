@@ -233,45 +233,63 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* SEÇÃO MULTI-TENANT & SEGURANÇA */}
+      {/* SEÇÃO SEGURANÇA & PRIVACIDADE */}
       <section id="seguranca" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto bg-slate-900/40 rounded-3xl border border-slate-800/60 my-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div>
             <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs font-bold mb-4">
               <ShieldCheck className="w-4 h-4" />
-              <span>Multi-Tenancy Corporativo com RLS</span>
+              <span>Privacidade & Segurança Blindada</span>
             </div>
             <h3 className="text-3xl font-black text-white leading-tight">
               Seus dados comerciais isolados e 100% protegidos.
             </h3>
-            <p className="text-xs text-slate-400 mt-4 leading-relaxed">
-              Cada empresa tem seus clientes, produtos, regras de margem e histórico de negociações estritamente isolados através de PostgreSQL Row Level Security (RLS). Uma empresa nunca acessa nem consulta dados de outra.
+            <p className="text-sm text-slate-400 mt-4 leading-relaxed">
+              Cada empresa tem seus clientes, produtos, regras de margem e histórico de negociações em ambiente totalmente exclusivo. Seus dados nunca são compartilhados ou acessados por outras organizações.
             </p>
 
-            <ul className="mt-6 space-y-3 text-xs text-slate-300">
-              <li className="flex items-center space-x-2">
+            <ul className="mt-6 space-y-3 text-sm text-slate-300">
+              <li className="flex items-center space-x-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Isolamento total por company_id em todas as consultas SQL</span>
+                <span>Isolamento e sigilo absoluto entre empresas</span>
               </li>
-              <li className="flex items-center space-x-2">
+              <li className="flex items-center space-x-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Perfis de acesso RBAC: Administrador, Gerente e Vendedor</span>
+                <span>Níveis de acesso personalizados para Vendedores, Gerentes e Diretores</span>
               </li>
-              <li className="flex items-center space-x-2">
+              <li className="flex items-center space-x-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Auditoria de alterações de preços e exclusões lógicas seguras</span>
+                <span>Rastreabilidade completa de alterações de preços e negociações</span>
               </li>
             </ul>
           </div>
 
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
-            <div className="text-slate-500">// Row Level Security (RLS) Ativo</div>
-            <div className="text-blue-400">CREATE POLICY &quot;price_history_isolation&quot;</div>
-            <div className="text-slate-300 pl-4">ON public.price_history</div>
-            <div className="text-slate-300 pl-4">FOR ALL USING (company_id = get_auth_company_id());</div>
-            <div className="mt-4 pt-4 border-t border-slate-800 text-[11px] text-emerald-400 font-sans flex items-center space-x-2">
+          <div className="bg-slate-950/80 p-8 rounded-2xl border border-slate-800/80 shadow-2xl relative overflow-hidden">
+            <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-800">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Status de Proteção</span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Ativo & Seguro
+              </span>
+            </div>
+            <div className="space-y-4 text-sm text-slate-300">
+              <div className="flex items-start space-x-3">
+                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-white">Criptografia e Isolamento</div>
+                  <div className="text-xs text-slate-400">Dados criptografados de ponta a ponta e segmentação estrita por cliente.</div>
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-white">Controle de Alçadas</div>
+                  <div className="text-xs text-slate-400">Garantia de que apenas usuários autorizados aprovem descontos e visualizem margens.</div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 pt-4 border-t border-slate-800 text-xs text-emerald-400 flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4" />
-              <span>Garantia de conformidade e proteção de dados sigilosos</span>
+              <span>Conformidade com padrões rigorosos de segurança corporativa</span>
             </div>
           </div>
         </div>
