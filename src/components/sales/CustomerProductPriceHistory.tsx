@@ -23,11 +23,26 @@ export default function CustomerProductPriceHistory({
 }: CustomerProductPriceHistoryProps) {
   const { getPriceHistory } = useData();
   const [showFullHistoryModal, setShowFullHistoryModal] = useState(false);
+  const [viewLimit, setViewLimit] = useState<'1' | '3' | '5' | '7' | 'all'>('1');
 
   if (!customerId || !productId) return null;
 
   const historyData = getPriceHistory(customerId, productId);
-  const hasHistory = historyData.history && historyData.history.length > 0;
+  const fullHistory = historyData.history || [];
+  const hasHistory = fullHistory.length > 0;
+
+  // Filtragem conforme personalização do usuário: 1, 3, 5, 7 ou Todas
+  const limitNumber = viewLimit === 'all' ? fullHistory.length : parseInt(viewLimit, 10);
+  const displayedHistory = fullHistory.slice(0, limitNumber);
+
+  // Estatísticas calculadas dinamicamente com base nas vendas exibidas
+  const displayedPrices = displayedHistory.map((h) => h.final_unit_price);
+  const dynamicMinPrice = displayedPrices.length > 0 ? Math.min(...displayedPrices) : historyData.min_price;
+  const dynamicMaxPrice = displayedPrices.length > 0 ? Math.max(...displayedPrices) : historyData.max_price;
+  const dynamicAvgPrice =
+    displayedPrices.length > 0
+      ? displayedPrices.reduce((acc, p) => acc + p, 0) / displayedPrices.length
+      : historyData.avg_price;
 
   // Análise comparativa se houver preço proposto
   let priceAlert: {
@@ -60,7 +75,7 @@ export default function CustomerProductPriceHistory({
   return (
     <div className="mt-3 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-white p-4 shadow-sm transition-all duration-200">
       {/* Cabeçalho do Card */}
-      <div className="flex items-center justify-between pb-2 border-b border-blue-100/80">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-blue-100/80 gap-2">
         <div className="flex items-center space-x-2">
           <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-sm">
             <History className="w-4 h-4" />
@@ -75,15 +90,75 @@ export default function CustomerProductPriceHistory({
           </div>
         </div>
 
+        {/* Seletor Rápido: Última, 3, 5, 7 ou Todas */}
         {hasHistory && (
-          <button
-            type="button"
-            onClick={() => setShowFullHistoryModal(true)}
-            className="inline-flex items-center text-xs font-semibold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-100/60 px-2.5 py-1 rounded-md border border-blue-200 transition-colors shadow-xs"
-          >
-            Ver histórico completo ({historyData.history.length})
-            <ChevronRight className="w-3.5 h-3.5 ml-1" />
-          </button>
+          <div className="flex items-center space-x-1.5 self-start sm:self-auto">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+              Exibir:
+            </span>
+            <div className="inline-flex rounded-lg bg-white/90 p-0.5 border border-blue-200 shadow-2xs text-[11px] font-semibold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setViewLimit('1')}
+                title="Ver última venda"
+                className={`px-2 py-1 rounded-md transition-all ${
+                  viewLimit === '1'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'hover:text-blue-700 hover:bg-blue-50/60'
+                }`}
+              >
+                Última
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewLimit('3')}
+                title="Ver últimas 3 vendas"
+                className={`px-2 py-1 rounded-md transition-all ${
+                  viewLimit === '3'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'hover:text-blue-700 hover:bg-blue-50/60'
+                }`}
+              >
+                3
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewLimit('5')}
+                title="Ver últimas 5 vendas"
+                className={`px-2 py-1 rounded-md transition-all ${
+                  viewLimit === '5'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'hover:text-blue-700 hover:bg-blue-50/60'
+                }`}
+              >
+                5
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewLimit('7')}
+                title="Ver últimas 7 vendas"
+                className={`px-2 py-1 rounded-md transition-all ${
+                  viewLimit === '7'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'hover:text-blue-700 hover:bg-blue-50/60'
+                }`}
+              >
+                7
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewLimit('all')}
+                title="Ver todas as vendas"
+                className={`px-2 py-1 rounded-md transition-all ${
+                  viewLimit === 'all'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'hover:text-blue-700 hover:bg-blue-50/60'
+                }`}
+              >
+                Todas ({fullHistory.length})
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -101,55 +176,133 @@ export default function CustomerProductPriceHistory({
         </div>
       ) : (
         <div className="mt-3 space-y-3">
-          {/* Card Destaque: Último Preço */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-lg border border-blue-100 shadow-xs">
-            <div>
-              <span className="text-[11px] font-medium text-slate-500 block">
-                ÚLTIMA NEGOCIAÇÃO
-              </span>
-              <div className="flex items-baseline space-x-2 mt-0.5">
-                <span className="text-xl font-black text-slate-900">
-                  {formatCurrency(historyData.last_price)}
+          {/* MODO 1: Exibindo Apenas a Última Venda */}
+          {viewLimit === '1' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-lg border border-blue-100 shadow-xs">
+              <div>
+                <span className="text-[11px] font-bold text-blue-800 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+                  ÚLTIMA NEGOCIAÇÃO
                 </span>
-                <span className="text-xs text-slate-500">
-                  em {formatDate(historyData.last_negotiation_date)}
+                <div className="flex items-baseline space-x-2 mt-0.5">
+                  <span className="text-xl font-black text-slate-900">
+                    {formatCurrency(historyData.last_price)}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    em {formatDate(historyData.last_negotiation_date)}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-2">
+                  <span>Qtd: <strong>{historyData.last_quantity} un</strong></span>
+                  <span>•</span>
+                  <span>Vendedor: <strong>{historyData.last_seller_name || 'Vendedor'}</strong></span>
+                </div>
+              </div>
+
+              {onApplyPrice && historyData.last_price && (
+                <button
+                  type="button"
+                  onClick={() => onApplyPrice(historyData.last_price!)}
+                  className="text-xs font-semibold px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 rounded-lg transition-all shadow-xs"
+                >
+                  Aplicar {formatCurrency(historyData.last_price)}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* MODO 2: Exibindo Lista de Vendas (3, 5, 7 ou Todas) */}
+          {viewLimit !== '1' && (
+            <div className="bg-white rounded-xl border border-blue-100 shadow-xs overflow-hidden">
+              <div className="px-3 py-2 bg-slate-50/90 border-b border-slate-100 flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700">
+                  {viewLimit === 'all'
+                    ? `Todas as ${displayedHistory.length} negociações anteriores`
+                    : `Últimas ${displayedHistory.length} negociações anteriores`}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Clique em &quot;Aplicar&quot; para puxar qualquer preço ao pedido
                 </span>
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-2">
-                <span>Qtd: <strong>{historyData.last_quantity} un</strong></span>
-                <span>•</span>
-                <span>Vendedor: <strong>{historyData.last_seller_name || 'Vendedor'}</strong></span>
+
+              <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                {displayedHistory.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="p-2.5 flex items-center justify-between hover:bg-blue-50/40 transition-colors text-xs"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 font-bold text-[10px] text-blue-800 flex items-center justify-center shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-black text-slate-900">
+                            {formatCurrency(item.final_unit_price)}
+                          </span>
+                          {idx === 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                              Última
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 flex items-center space-x-1.5 mt-0.5">
+                          <span>{formatDate(item.negotiation_date)}</span>
+                          <span>•</span>
+                          <span>{item.quantity} un</span>
+                          {item.notes && (
+                            <>
+                              <span>•</span>
+                              <span className="italic truncate max-w-[150px]">{item.notes}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] text-slate-500 hidden sm:inline">
+                        {item.seller_name || 'Vendedor'}
+                      </span>
+                      {onApplyPrice && (
+                        <button
+                          type="button"
+                          onClick={() => onApplyPrice(item.final_unit_price)}
+                          className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 rounded-md font-semibold text-[11px] transition-all"
+                        >
+                          Aplicar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
-            {onApplyPrice && historyData.last_price && (
-              <button
-                type="button"
-                onClick={() => onApplyPrice(historyData.last_price!)}
-                className="text-xs font-semibold px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 rounded-lg transition-all shadow-xs"
-              >
-                Aplicar {formatCurrency(historyData.last_price)}
-              </button>
-            )}
-          </div>
-
-          {/* Grid de Estatísticas Rápidas */}
+          {/* Grid de Estatísticas Rápidas (recalculadas dinamicamente com base nas vendas selecionadas) */}
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <div className="bg-white/80 p-2 rounded-lg border border-slate-100">
               <span className="text-[10px] text-slate-500 block font-medium">Preço Tabela</span>
               <span className="font-bold text-slate-700">{formatCurrency(currentProduct.selling_price)}</span>
             </div>
             <div className="bg-emerald-50/60 p-2 rounded-lg border border-emerald-100">
-              <span className="text-[10px] text-emerald-700 block font-medium">Menor Preço</span>
-              <span className="font-bold text-emerald-800">{formatCurrency(historyData.min_price)}</span>
+              <span className="text-[10px] text-emerald-700 block font-medium">
+                {viewLimit === '1' ? 'Menor Histórico' : `Menor (${displayedHistory.length})`}
+              </span>
+              <span className="font-bold text-emerald-800">{formatCurrency(dynamicMinPrice)}</span>
             </div>
             <div className="bg-blue-50/60 p-2 rounded-lg border border-blue-100">
-              <span className="text-[10px] text-blue-700 block font-medium">Preço Médio</span>
-              <span className="font-bold text-blue-800">{formatCurrency(historyData.avg_price)}</span>
+              <span className="text-[10px] text-blue-700 block font-medium">
+                {viewLimit === '1' ? 'Média Geral' : `Média (${displayedHistory.length})`}
+              </span>
+              <span className="font-bold text-blue-800">{formatCurrency(dynamicAvgPrice)}</span>
             </div>
             <div className="bg-amber-50/60 p-2 rounded-lg border border-amber-100">
-              <span className="text-[10px] text-amber-700 block font-medium">Maior Preço</span>
-              <span className="font-bold text-amber-800">{formatCurrency(historyData.max_price)}</span>
+              <span className="text-[10px] text-amber-700 block font-medium">
+                {viewLimit === '1' ? 'Maior Histórico' : `Maior (${displayedHistory.length})`}
+              </span>
+              <span className="font-bold text-amber-800">{formatCurrency(dynamicMaxPrice)}</span>
             </div>
           </div>
         </div>
