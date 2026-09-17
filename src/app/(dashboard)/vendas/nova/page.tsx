@@ -49,6 +49,8 @@ function NovaVendaForm() {
   const [quantity, setQuantity] = useState<number>(1);
   const [unitPrice, setUnitPrice] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
+  const [discountType, setDiscountType] = useState<'VALOR' | 'PERCENTUAL'>('VALOR');
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   // Carrinho de Itens da Venda Atual
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -189,6 +191,43 @@ function NovaVendaForm() {
     if (prod) {
       setUnitPrice(prod.selling_price);
       setDiscount(0);
+      setDiscountPercent(0);
+    }
+  };
+
+  // Funções de sincronização de desconto (R$ <-> %)
+  const handleDiscountValueChange = (val: number) => {
+    const rawVal = Math.max(0, val);
+    setDiscount(rawVal);
+    const grossTotal = quantity * unitPrice;
+    if (grossTotal > 0) {
+      const pct = Number(((rawVal / grossTotal) * 100).toFixed(2));
+      setDiscountPercent(pct);
+    } else {
+      setDiscountPercent(0);
+    }
+  };
+
+  const handleDiscountPercentChange = (pct: number) => {
+    const rawPct = Math.max(0, Math.min(100, pct));
+    setDiscountPercent(rawPct);
+    const grossTotal = quantity * unitPrice;
+    const calculatedValue = Number(((grossTotal * rawPct) / 100).toFixed(2));
+    setDiscount(calculatedValue);
+  };
+
+  const handleQuantityOrPriceChange = (newQty: number, newPrice: number) => {
+    setQuantity(newQty);
+    setUnitPrice(newPrice);
+    if (discountType === 'PERCENTUAL') {
+      const grossTotal = newQty * newPrice;
+      const calculatedValue = Number(((grossTotal * discountPercent) / 100).toFixed(2));
+      setDiscount(calculatedValue);
+    } else {
+      const grossTotal = newQty * newPrice;
+      if (grossTotal > 0) {
+        setDiscountPercent(Number(((discount / grossTotal) * 100).toFixed(2)));
+      }
     }
   };
 
@@ -533,7 +572,7 @@ function NovaVendaForm() {
                     min="1"
                     required
                     value={quantity}
-                    onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                    onChange={(e) => handleQuantityOrPriceChange(Math.max(1, Number(e.target.value)), unitPrice)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -548,23 +587,74 @@ function NovaVendaForm() {
                     min="0"
                     required
                     value={unitPrice}
-                    onChange={(e) => setUnitPrice(Number(e.target.value))}
+                    onChange={(e) => handleQuantityOrPriceChange(quantity, Number(e.target.value))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Desconto Total (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={discount}
-                    onChange={(e) => setDiscount(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-red-600 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-slate-600">
+                      Desconto
+                    </label>
+                    <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('VALOR')}
+                        className={`px-1.5 py-0.5 rounded-md transition-all ${
+                          discountType === 'VALOR'
+                            ? 'bg-white text-blue-700 shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        R$
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('PERCENTUAL')}
+                        className={`px-1.5 py-0.5 rounded-md transition-all ${
+                          discountType === 'PERCENTUAL'
+                            ? 'bg-white text-blue-700 shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        %
+                      </button>
+                    </div>
+                  </div>
+
+                  {discountType === 'VALOR' ? (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={discount}
+                        onChange={(e) => handleDiscountValueChange(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-red-600 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                      {discount > 0 && (
+                        <span className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-400 pointer-events-none">
+                          ({discountPercent}%)
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={discountPercent}
+                        onChange={(e) => handleDiscountPercentChange(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-red-600 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-400 pointer-events-none">
+                        = {formatCurrency(discount)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -644,7 +734,11 @@ function NovaVendaForm() {
                           </span>
                           <span className="text-[11px] text-slate-500">
                             {item.quantity} {prod?.unit || 'un'} × {formatCurrency(item.unit_price)}
-                            {item.discount > 0 && ` (Desc. ${formatCurrency(item.discount)})`}
+                            {item.discount > 0 && (
+                              <span className="text-red-600 font-semibold ml-1">
+                                (Desc. -{formatCurrency(item.discount)} / {((item.discount / (item.quantity * item.unit_price)) * 100).toFixed(1)}%)
+                              </span>
+                            )}
                           </span>
                           {item.commission_amount > 0 && (
                             <span className="text-[10px] text-emerald-700 block font-medium">
@@ -711,7 +805,14 @@ function NovaVendaForm() {
                 </div>
                 <div className="flex justify-between text-slate-500">
                   <span>Descontos:</span>
-                  <span className="text-red-600 font-medium">- {formatCurrency(totalDiscount)}</span>
+                  <span className="text-red-600 font-medium">
+                    - {formatCurrency(totalDiscount)}
+                    {subtotal > 0 && totalDiscount > 0 && (
+                      <span className="text-[11px] text-red-500 ml-1">
+                        ({((totalDiscount / subtotal) * 100).toFixed(1)}%)
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between text-slate-700 font-semibold pt-1 border-t border-slate-100">
                   <span>Profissional Responsável:</span>

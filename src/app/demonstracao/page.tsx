@@ -135,9 +135,46 @@ export default function SandboxDemonstracaoPage() {
   const [proposedPrice, setProposedPrice] = useState<number>(currentProduct.lastNegotiatedPrice);
   const [quantity, setQuantity] = useState<number>(30);
   const [discount, setDiscount] = useState<number>(0);
+  const [discountType, setDiscountType] = useState<'VALOR' | 'PERCENTUAL'>('VALOR');
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [cartItems, setCartItems] = useState<Array<any>>([]);
   const [saleFinished, setSaleFinished] = useState(false);
+
+  // Sincronizar descontos R$ <-> %
+  const handleDiscountValueChange = (val: number) => {
+    const rawVal = Math.max(0, val);
+    setDiscount(rawVal);
+    const grossTotal = quantity * proposedPrice;
+    if (grossTotal > 0) {
+      setDiscountPercent(Number(((rawVal / grossTotal) * 100).toFixed(1)));
+    } else {
+      setDiscountPercent(0);
+    }
+  };
+
+  const handleDiscountPercentChange = (pct: number) => {
+    const rawPct = Math.max(0, Math.min(100, pct));
+    setDiscountPercent(rawPct);
+    const grossTotal = quantity * proposedPrice;
+    const calcValue = Number(((grossTotal * rawPct) / 100).toFixed(2));
+    setDiscount(calcValue);
+  };
+
+  const handleQuantityOrProposedPriceChange = (newQty: number, newPrice: number) => {
+    setQuantity(newQty);
+    setProposedPrice(newPrice);
+    if (discountType === 'PERCENTUAL') {
+      const grossTotal = newQty * newPrice;
+      const calcValue = Number(((grossTotal * discountPercent) / 100).toFixed(2));
+      setDiscount(calcValue);
+    } else {
+      const grossTotal = newQty * newPrice;
+      if (grossTotal > 0) {
+        setDiscountPercent(Number(((discount / grossTotal) * 100).toFixed(1)));
+      }
+    }
+  };
 
   // Alerta de Negociação Dinâmico
   let alertType: 'below_min' | 'below_last' | 'good' | 'neutral' = 'neutral';
@@ -161,6 +198,8 @@ export default function SandboxDemonstracaoPage() {
     const prods = DEMO_PRODUCTS[clientId] || DEMO_PRODUCTS['c1'];
     setSelectedProductId(prods[0].id);
     setProposedPrice(prods[0].lastNegotiatedPrice);
+    setDiscount(0);
+    setDiscountPercent(0);
   };
 
   const handleProductChange = (productId: string) => {
@@ -168,6 +207,8 @@ export default function SandboxDemonstracaoPage() {
     const prod = availableProducts.find((p) => p.id === productId);
     if (prod) {
       setProposedPrice(prod.lastNegotiatedPrice);
+      setDiscount(0);
+      setDiscountPercent(0);
     }
   };
 
@@ -434,7 +475,7 @@ export default function SandboxDemonstracaoPage() {
               </div>
 
               {/* Inputs de Negociação */}
-              <div className="grid grid-cols-3 gap-3 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                 <div>
                   <label className="text-[11px] font-bold text-slate-400 block mb-1">
                     Quantidade
@@ -443,7 +484,7 @@ export default function SandboxDemonstracaoPage() {
                     type="number"
                     min="1"
                     value={quantity}
-                    onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                    onChange={(e) => handleQuantityOrProposedPriceChange(Math.max(1, Number(e.target.value)), proposedPrice)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-bold text-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
@@ -456,23 +497,74 @@ export default function SandboxDemonstracaoPage() {
                     type="number"
                     step="0.10"
                     value={proposedPrice}
-                    onChange={(e) => setProposedPrice(Number(e.target.value))}
+                    onChange={(e) => handleQuantityOrProposedPriceChange(quantity, Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-bold text-blue-400 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                   <span className="text-[10px] text-slate-500 mt-0.5 block">Experimente digitar R$ 28 ou R$ 34</span>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-400 block mb-1">
-                    Desconto Total (R$)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={discount}
-                    onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-bold text-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-slate-400">
+                      Desconto
+                    </label>
+                    <div className="flex items-center bg-slate-900 border border-slate-800 p-0.5 rounded-lg text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('VALOR')}
+                        className={`px-1.5 py-0.5 rounded-md transition-all ${
+                          discountType === 'VALOR'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        R$
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('PERCENTUAL')}
+                        className={`px-1.5 py-0.5 rounded-md transition-all ${
+                          discountType === 'PERCENTUAL'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        %
+                      </button>
+                    </div>
+                  </div>
+
+                  {discountType === 'VALOR' ? (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        value={discount}
+                        onChange={(e) => handleDiscountValueChange(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-bold text-red-400 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                      {discount > 0 && (
+                        <span className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-500 pointer-events-none">
+                          ({discountPercent}%)
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={discountPercent}
+                        onChange={(e) => handleDiscountPercentChange(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-bold text-red-400 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      />
+                      <span className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-500 pointer-events-none">
+                        = {formatCurrency(discount)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
