@@ -205,6 +205,13 @@ export default function VendasPage() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          <Link
+                            href={`/vendas/nova?cliente=${sale.customer_id}&repetir_venda=${sale.id}`}
+                            title="Iniciar nova venda repetindo itens deste pedido"
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            <ShoppingCart className="w-4 h-4" />
+                          </Link>
                           {sale.status === 'COMPLETED' && (
                             <button
                               type="button"
@@ -382,11 +389,18 @@ export default function VendasPage() {
               </div>
             )}
 
-            <div className="mt-5 pt-3 border-t border-slate-100 flex justify-end">
+            <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <Link
+                href={`/vendas/nova?cliente=${selectedSale.customer_id}&repetir_venda=${selectedSale.id}`}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span>Repetir Este Pedido</span>
+              </Link>
               <button
                 type="button"
                 onClick={() => setSelectedSale(null)}
-                className="px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
               >
                 Fechar Detalhes
               </button>

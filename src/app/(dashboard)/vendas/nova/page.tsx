@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useData } from '@/context/DataContext';
 import { formatCurrency, formatNumber } from '@/lib/formatters';
 import CustomerProductPriceHistory from '@/components/sales/CustomerProductPriceHistory';
@@ -20,6 +20,7 @@ import {
   Award,
   DollarSign,
   Percent,
+  RotateCcw,
 } from 'lucide-react';
 
 interface CartItem {
@@ -33,43 +34,149 @@ interface CartItem {
   commission_amount: number;
 }
 
-export default function NovaVendaPage() {
+function NovaVendaForm() {
   const router = useRouter();
-  const { customers, products, professionals, createSale } = useData();
+  const searchParams = useSearchParams();
+  const customerIdParam = searchParams.get('cliente') || '';
+  const repeatSaleIdParam = searchParams.get('repetir_venda') || '';
+
+  const { customers, products, professionals, sales, createSale } = useData();
 
   // Estado da Venda
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(customerIdParam);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [unitPrice, setUnitPrice] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
 
-  // Sincronizar seleção inicial quando os dados carregarem
-  React.useEffect(() => {
-    if (customers.length > 0 && !selectedCustomerId) {
+  // Carrinho de Itens da Venda Atual
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [notes, setNotes] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<string>('PIX');
+  const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [autoLoadedNotice, setAutoLoadedNotice] = useState<string | null>(null);
+
+  // Rastrear se já fizemos a carga inicial dos produtos do cliente
+  const initializedRef = React.useRef(false);
+
+  // 1. Sincronizar cliente inicial vindo da URL ou default para o primeiro cliente
+  useEffect(() => {
+    if (customerIdParam && customers.some(c => c.id === customerIdParam)) {
+      setSelectedCustomerId(customerIdParam);
+    } else if (customers.length > 0 && !selectedCustomerId) {
       setSelectedCustomerId(customers[0].id);
     }
-  }, [customers, selectedCustomerId]);
+  }, [customerIdParam, customers, selectedCustomerId]);
 
-  React.useEffect(() => {
+  // 2. Carregar produtos da última venda ou venda solicitada
+  useEffect(() => {
+    if (!selectedCustomerId || products.length === 0 || sales.length === 0 || initializedRef.current) return;
+
+    // Buscar vendas do cliente ordenadas pelas mais recentes
+    const customerSales = sales
+      .filter((s) => s.customer_id === selectedCustomerId)
+      .sort((a, b) => new Date(b.sold_at).getTime() - new Date(a.sold_at).getTime());
+
+    // Se veio um ID específico para repetir, prioriza ele. Senão, pega a última venda.
+    const targetSale = repeatSaleIdParam
+      ? sales.find((s) => s.id === repeatSaleIdParam)
+      : customerSales[0];
+
+    if (targetSale && targetSale.items && targetSale.items.length > 0) {
+      const restoredItems: CartItem[] = targetSale.items
+        .map((item) => {
+          const prod = products.find((p) => p.id === item.product_id);
+          if (!prod) return null;
+
+          return {
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            discount: item.discount,
+            total: item.total,
+            commission_type_snapshot: item.commission_type_snapshot || prod.commission_type || 'NONE',
+            commission_value_snapshot: item.commission_value_snapshot ?? prod.commission_value ?? 0,
+            commission_amount: item.commission_amount || 0,
+          };
+        })
+        .filter(Boolean) as CartItem[];
+
+      if (restoredItems.length > 0) {
+        setCartItems(restoredItems);
+        if (targetSale.professional_id) {
+          setSelectedProfessionalId(targetSale.professional_id);
+        }
+        const firstProdId = restoredItems[0].product_id;
+        setSelectedProductId(firstProdId);
+        const prodObj = products.find((p) => p.id === firstProdId);
+        if (prodObj) {
+          setUnitPrice(prodObj.selling_price);
+        }
+        setAutoLoadedNotice(
+          `Produtos carregados automaticamente da última compra do cliente (Pedido #${targetSale.sale_number}). Você pode editá-los ou adicionar novos.`
+        );
+      }
+    }
+
+    initializedRef.current = true;
+  }, [selectedCustomerId, products, sales, repeatSaleIdParam]);
+
+  // Sincronizar seleção do profissional
+  useEffect(() => {
     if (professionals.length > 0 && !selectedProfessionalId) {
       setSelectedProfessionalId(professionals[0].id);
     }
   }, [professionals, selectedProfessionalId]);
 
-  React.useEffect(() => {
+  // Sincronizar produto selecionado inicial se ainda não houver
+  useEffect(() => {
     if (products.length > 0 && !selectedProductId) {
       setSelectedProductId(products[0].id);
       setUnitPrice(products[0].selling_price);
     }
   }, [products, selectedProductId]);
 
-  // Carrinho de Itens da Venda Atual
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [notes, setNotes] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<string>('PIX');
-  const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  // Quando o usuário troca de cliente manualmente no select, dar opção de recarregar a última venda dele
+  const handleCustomerChange = (newCustId: string) => {
+    setSelectedCustomerId(newCustId);
+    const customerSales = sales
+      .filter((s) => s.customer_id === newCustId)
+      .sort((a, b) => new Date(b.sold_at).getTime() - new Date(a.sold_at).getTime());
+
+    const lastSale = customerSales[0];
+    if (lastSale && lastSale.items && lastSale.items.length > 0) {
+      const restoredItems: CartItem[] = lastSale.items
+        .map((item) => {
+          const prod = products.find((p) => p.id === item.product_id);
+          if (!prod) return null;
+          return {
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            discount: item.discount,
+            total: item.total,
+            commission_type_snapshot: item.commission_type_snapshot || prod.commission_type || 'NONE',
+            commission_value_snapshot: item.commission_value_snapshot ?? prod.commission_value ?? 0,
+            commission_amount: item.commission_amount || 0,
+          };
+        })
+        .filter(Boolean) as CartItem[];
+
+      if (restoredItems.length > 0) {
+        setCartItems(restoredItems);
+        if (lastSale.professional_id) {
+          setSelectedProfessionalId(lastSale.professional_id);
+        }
+        setAutoLoadedNotice(
+          `Cliente alterado: Itens da última venda (#${lastSale.sale_number}) foram carregados automaticamente.`
+        );
+        return;
+      }
+    }
+    // Se não tiver compras anteriores, limpa o aviso
+    setAutoLoadedNotice(null);
+  };
 
   const currentCustomer = customers.find((c) => c.id === selectedCustomerId);
   const currentProfessional = professionals.find((p) => p.id === selectedProfessionalId);
@@ -185,6 +292,28 @@ export default function NovaVendaPage() {
         </div>
       )}
 
+      {/* Aviso de Produtos Pré-carregados da Última Venda */}
+      {autoLoadedNotice && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 bg-blue-600 text-white rounded-xl shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-blue-950 block">Produtos Pré-carregados da Última Negociação</span>
+              <p className="text-[11px] text-blue-700 mt-0.5">{autoLoadedNotice}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAutoLoadedNotice(null)}
+            className="text-[11px] font-bold text-blue-600 hover:text-blue-800 shrink-0 px-2 py-1 bg-white rounded-lg border border-blue-200 shadow-2xs"
+          >
+            Entendi
+          </button>
+        </div>
+      )}
+
       {/* Grid Principal: Formulário à Esquerda, Resumo à Direita */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Painel Esquerdo: Seleção de Cliente, Profissional e Produto */}
@@ -221,7 +350,7 @@ export default function NovaVendaPage() {
                   <div className="relative">
                     <select
                       value={selectedCustomerId}
-                      onChange={(e) => setSelectedCustomerId(e.target.value)}
+                      onChange={(e) => handleCustomerChange(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-all"
                     >
                       {customers.map((c) => (
@@ -615,5 +744,13 @@ export default function NovaVendaPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function NovaVendaPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Carregando tela de negociação...</div>}>
+      <NovaVendaForm />
+    </Suspense>
   );
 }
