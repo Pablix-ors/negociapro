@@ -25,7 +25,7 @@ const commercialNavigation = [
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Produtos', href: '/produtos', icon: Package },
   { name: 'Profissionais', href: '/profissionais', icon: Award },
-  { name: 'Comissões', href: '/comissoes', icon: DollarSign },
+  { name: 'Financeiro', href: '/financeiro', icon: DollarSign },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
 

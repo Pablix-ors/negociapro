@@ -238,8 +238,8 @@ export default function DashboardPage() {
             <span className="text-lg font-black text-amber-600 tracking-tight block">
               {formatCurrency(pendingCommissionsTotal)}
             </span>
-            <Link href="/comissoes" className="text-[10px] text-amber-700 hover:underline font-semibold block mt-0.5">
-              Gerenciar pagamentos →
+            <Link href="/financeiro" className="text-[10px] text-amber-700 hover:underline font-semibold block mt-0.5">
+              Acessar financeiro e repasses →
             </Link>
           </div>
         </div>

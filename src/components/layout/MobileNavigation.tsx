@@ -69,15 +69,15 @@ export default function MobileNavigation() {
               </Link>
 
               <Link
-                href="/comissoes"
+                href="/financeiro"
                 onClick={() => setMoreOpen(false)}
                 className="flex flex-col items-center justify-center p-3.5 rounded-2xl bg-slate-50 hover:bg-emerald-50 border border-slate-200/80 transition-all text-center group"
               >
                 <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
                   <DollarSign className="w-5 h-5" />
                 </div>
-                <span className="text-xs font-bold text-slate-800">Comissões</span>
-                <span className="text-[10px] text-slate-400">Pagamentos & Extrato</span>
+                <span className="text-xs font-bold text-slate-800">Financeiro</span>
+                <span className="text-[10px] text-slate-400">Fluxo & Comissões</span>
               </Link>
 
               <Link

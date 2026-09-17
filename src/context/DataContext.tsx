@@ -99,7 +99,7 @@ const DEMO_NOTIFICATIONS: AppNotification[] = [
     message: 'Carlos Vendedor Master gerou R$ 65,80 em comissões na Venda #1001.',
     timestamp: 'Há 4 horas',
     read: false,
-    link: '/comissoes',
+    link: '/financeiro',
   },
 ];
 
