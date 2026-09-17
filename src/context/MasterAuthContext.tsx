@@ -267,6 +267,21 @@ export function MasterAuthProvider({ children }: { children: React.ReactNode }) 
       return { success: false, message: 'A senha deve conter no mínimo 8 caracteres.' };
     }
 
+    try {
+      const res = await fetch('/api/master/auth', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: masterUser.email, newPassword: newPass }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        return { success: false, message: data.message || 'Falha ao salvar nova senha.' };
+      }
+    } catch (e: any) {
+      console.warn('Aviso: atualizando credencial master localmente:', e);
+    }
+
     const updatedUser: MasterUser = {
       ...masterUser,
       must_change_password: false,
