@@ -24,6 +24,8 @@ import {
   Key,
   ShieldCheck,
   Lock,
+  Eye,
+  EyeOff,
   Copy,
   Share2,
   MessageCircle,
@@ -78,6 +80,7 @@ export default function ProfissionaisPage() {
   const [enableLoginAccess, setEnableLoginAccess] = useState(false);
   const [loginRole, setLoginRole] = useState<UserRole>('VENDEDOR');
   const [tempPassword, setTempPassword] = useState('123456');
+  const [showTempPass, setShowTempPass] = useState(false);
 
   const openCreateModal = () => {
     setEditingProf(null);
@@ -91,6 +94,7 @@ export default function ProfissionaisPage() {
     setEnableLoginAccess(false);
     setLoginRole('VENDEDOR');
     setTempPassword('123456');
+    setShowTempPass(false);
     setError(null);
     setModalOpen(true);
   };
@@ -107,6 +111,7 @@ export default function ProfissionaisPage() {
     setEnableLoginAccess(false);
     setLoginRole('VENDEDOR');
     setTempPassword('123456');
+    setShowTempPass(false);
     setError(null);
     setModalOpen(true);
   };
@@ -644,13 +649,21 @@ export default function ProfissionaisPage() {
                         </label>
                         <div className="relative">
                           <input
-                            type="text"
+                            type={showTempPass ? 'text' : 'password'}
                             value={tempPassword}
                             onChange={(e) => setTempPassword(e.target.value)}
                             placeholder="123456"
-                            className="w-full bg-white border border-blue-200 rounded-xl pl-8 pr-3 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            className="w-full bg-white border border-blue-200 rounded-xl pl-8 pr-10 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                           />
                           <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <button
+                            type="button"
+                            onClick={() => setShowTempPass(!showTempPass)}
+                            title={showTempPass ? 'Ocultar senha' : 'Ver senha'}
+                            className="p-1 text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2 rounded-lg transition-colors"
+                          >
+                            {showTempPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
                         </div>
                       </div>
                     </div>
