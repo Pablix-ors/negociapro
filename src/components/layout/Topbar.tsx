@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useMaster } from '@/context/MasterAuthContext';
 import { useData } from '@/context/DataContext';
 import { formatCurrency } from '@/lib/formatters';
 import InstallPWAButton from '@/components/pwa/InstallPWAButton';
@@ -18,11 +19,13 @@ import {
   Users,
   ShoppingCart,
   Command,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function Topbar() {
   const router = useRouter();
   const { user, company, logout } = useAuth();
+  const { impersonatedCompany, masterUser } = useMaster();
   const {
     customers,
     products,
@@ -32,6 +35,13 @@ export default function Topbar() {
     markNotificationAsRead,
     markAllNotificationsAsRead,
   } = useData();
+
+  const isMasterImpersonating = Boolean(impersonatedCompany);
+  const displayName = isMasterImpersonating
+    ? (masterUser?.name ? `${masterUser.name} (Master)` : 'Pablix (Suporte Master)')
+    : (user?.name || 'Administrador');
+
+  const displayRole = isMasterImpersonating ? 'SUPORTE MASTER' : (user?.role || 'ADMIN');
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -200,17 +210,35 @@ export default function Topbar() {
             <button
               type="button"
               onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-              className="flex items-center space-x-3 p-1.5 rounded-xl hover:bg-slate-100 transition-colors text-left"
+              className={`flex items-center space-x-3 p-1.5 rounded-xl transition-colors text-left ${
+                isMasterImpersonating
+                  ? 'hover:bg-amber-50/80 bg-amber-50/40 border border-amber-200/60'
+                  : 'hover:bg-slate-100'
+              }`}
             >
-              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center font-bold text-xs">
-                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              <div
+                className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs ${
+                  isMasterImpersonating
+                    ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
+                    : 'bg-blue-100 text-blue-700 border-blue-200'
+                }`}
+              >
+                {isMasterImpersonating ? (
+                  <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
+                ) : (
+                  displayName.charAt(0).toUpperCase()
+                )}
               </div>
               <div className="hidden md:block">
                 <span className="text-xs font-bold text-slate-800 block leading-tight">
-                  {user?.name || 'Carlos Vendedor'}
+                  {displayName}
                 </span>
-                <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider block">
-                  {user?.role || 'ADMIN'}
+                <span
+                  className={`text-[10px] font-semibold uppercase tracking-wider block ${
+                    isMasterImpersonating ? 'text-amber-600 font-black' : 'text-blue-600'
+                  }`}
+                >
+                  {displayRole}
                 </span>
               </div>
             </button>

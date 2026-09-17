@@ -302,8 +302,19 @@ export function MasterAuthProvider({ children }: { children: React.ReactNode }) 
     setImpersonatedCompany(company);
     localStorage.setItem('negociapro_master_impersonated', JSON.stringify(company));
 
-    // Define temporariamente a empresa no contexto normal para que o dashboard mostre os dados dela
+    // Define a empresa no contexto normal para que o dashboard mostre os dados dela
     localStorage.setItem('negociapro_company', JSON.stringify(company));
+
+    // Define o perfil ativo de usuário com a identidade real do Master Administrador
+    const masterProfile = {
+      id: masterUser?.id || 'master-primary-001',
+      company_id: company.id,
+      name: masterUser?.name ? `${masterUser.name} (Suporte Master)` : 'Pablix (Suporte Master)',
+      email: masterUser?.email || PRIMARY_MASTER_EMAIL,
+      role: 'ADMIN',
+      active: true,
+    };
+    localStorage.setItem('negociapro_user', JSON.stringify(masterProfile));
 
     addAuditLog(
       'ACCESS_ESTABLISHMENT',
@@ -324,6 +335,8 @@ export function MasterAuthProvider({ children }: { children: React.ReactNode }) 
     }
     setImpersonatedCompany(null);
     localStorage.removeItem('negociapro_master_impersonated');
+    localStorage.removeItem('negociapro_company');
+    localStorage.removeItem('negociapro_user');
   };
 
   // Gerenciamento de Estabelecimentos com persistência direta no Supabase

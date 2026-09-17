@@ -114,64 +114,70 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [priceHistoryMap, setPriceHistoryMap] = useState<Record<string, PriceHistorySummary>>({});
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
-  // Carregar dados de acordo com o usuário (persistência segura)
-  useEffect(() => {
-    const isDemoUser = !user || user.email === 'admin@negociapro.com.br';
+  // Chave prefixada para isolamento estrito entre empresas (Multi-Tenant)
+  const tenantKey = company?.id ? `_tenant_${company.id}` : '';
+  const isDemoCompany = !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company';
 
-    const savedCust = localStorage.getItem('negociapro_customers');
-    const savedProd = localStorage.getItem('negociapro_products');
-    const savedSales = localStorage.getItem('negociapro_sales');
-    const savedProfs = localStorage.getItem('negociapro_professionals');
-    const savedComms = localStorage.getItem('negociapro_commissions');
-    const savedHist = localStorage.getItem('negociapro_history');
-    const savedNotifs = localStorage.getItem('negociapro_notifications');
+  // Carregar dados de acordo com a empresa atual (persistência segura por tenant)
+  useEffect(() => {
+    const key = tenantKey;
+    const isDemo = isDemoCompany;
+
+    const savedCust = localStorage.getItem(`negociapro_customers${key}`);
+    const savedProd = localStorage.getItem(`negociapro_products${key}`);
+    const savedSales = localStorage.getItem(`negociapro_sales${key}`);
+    const savedProfs = localStorage.getItem(`negociapro_professionals${key}`);
+    const savedComms = localStorage.getItem(`negociapro_commissions${key}`);
+    const savedHist = localStorage.getItem(`negociapro_history${key}`);
+    const savedNotifs = localStorage.getItem(`negociapro_notifications${key}`);
 
     if (savedCust) {
       try { setCustomers(JSON.parse(savedCust)); } catch {}
     } else {
-      setCustomers(isDemoUser ? DEMO_CUSTOMERS : []);
+      // Se for a empresa demo original e não tem dados salvos, usa demo. Se for empresa nova, começa zerada.
+      setCustomers(isDemo ? DEMO_CUSTOMERS : []);
     }
 
     if (savedProd) {
       try { setProducts(JSON.parse(savedProd)); } catch {}
     } else {
-      setProducts(isDemoUser ? DEMO_PRODUCTS : []);
+      setProducts(isDemo ? DEMO_PRODUCTS : []);
     }
 
     if (savedSales) {
       try { setSales(JSON.parse(savedSales)); } catch {}
     } else {
-      setSales(isDemoUser ? DEMO_SALES : []);
+      setSales(isDemo ? DEMO_SALES : []);
     }
 
     if (savedProfs) {
       try { setProfessionals(JSON.parse(savedProfs)); } catch {}
     } else {
-      setProfessionals(isDemoUser ? DEMO_PROFESSIONALS : []);
+      setProfessionals(isDemo ? DEMO_PROFESSIONALS : []);
     }
 
     if (savedComms) {
       try { setCommissions(JSON.parse(savedComms)); } catch {}
     } else {
-      setCommissions(isDemoUser ? DEMO_COMMISSION_RECORDS : []);
+      setCommissions(isDemo ? DEMO_COMMISSION_RECORDS : []);
     }
 
     if (savedHist) {
       try { setPriceHistoryMap(JSON.parse(savedHist)); } catch {}
     } else {
-      setPriceHistoryMap(isDemoUser ? DEMO_PRICE_HISTORY_MAP : {});
+      setPriceHistoryMap(isDemo ? DEMO_PRICE_HISTORY_MAP : {});
     }
 
     if (savedNotifs) {
       try { setNotifications(JSON.parse(savedNotifs)); } catch {}
     } else {
-      setNotifications(isDemoUser ? DEMO_NOTIFICATIONS : []);
+      setNotifications(isDemo ? DEMO_NOTIFICATIONS : []);
     }
-  }, [user]);
+  }, [user, company?.id]);
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
-    localStorage.setItem('negociapro_notifications', JSON.stringify(data));
+    localStorage.setItem(`negociapro_notifications${tenantKey}`, JSON.stringify(data));
   };
 
   const markNotificationAsRead = (id: string) => {
@@ -197,32 +203,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const saveCust = (data: Customer[]) => {
     setCustomers(data);
-    localStorage.setItem('negociapro_customers', JSON.stringify(data));
+    localStorage.setItem(`negociapro_customers${tenantKey}`, JSON.stringify(data));
   };
 
   const saveProd = (data: Product[]) => {
     setProducts(data);
-    localStorage.setItem('negociapro_products', JSON.stringify(data));
+    localStorage.setItem(`negociapro_products${tenantKey}`, JSON.stringify(data));
   };
 
   const saveSalesState = (data: Sale[]) => {
     setSales(data);
-    localStorage.setItem('negociapro_sales', JSON.stringify(data));
+    localStorage.setItem(`negociapro_sales${tenantKey}`, JSON.stringify(data));
   };
 
   const saveProfsState = (data: Professional[]) => {
     setProfessionals(data);
-    localStorage.setItem('negociapro_professionals', JSON.stringify(data));
+    localStorage.setItem(`negociapro_professionals${tenantKey}`, JSON.stringify(data));
   };
 
   const saveCommsState = (data: CommissionRecord[]) => {
     setCommissions(data);
-    localStorage.setItem('negociapro_commissions', JSON.stringify(data));
+    localStorage.setItem(`negociapro_commissions${tenantKey}`, JSON.stringify(data));
   };
 
   const saveHistoryState = (map: Record<string, PriceHistorySummary>) => {
     setPriceHistoryMap(map);
-    localStorage.setItem('negociapro_history', JSON.stringify(map));
+    localStorage.setItem(`negociapro_history${tenantKey}`, JSON.stringify(map));
   };
 
   const getPriceHistory = (customerId: string, productId: string): PriceHistorySummary => {

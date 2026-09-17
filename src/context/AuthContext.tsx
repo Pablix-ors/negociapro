@@ -26,23 +26,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Carregar sessão persistida ou usar DEMO_USER por padrão no dev
-    const savedUser = localStorage.getItem('negociapro_user');
-    const savedCompany = localStorage.getItem('negociapro_company');
+    const syncAuth = () => {
+      const savedImpersonation = localStorage.getItem('negociapro_master_impersonated');
+      const savedUser = localStorage.getItem('negociapro_user');
+      const savedCompany = localStorage.getItem('negociapro_company');
 
-    if (savedUser && savedCompany) {
-      try {
-        setUser(JSON.parse(savedUser));
-        setCompany(JSON.parse(savedCompany));
-      } catch {
+      if (savedImpersonation) {
+        try {
+          const comp = JSON.parse(savedImpersonation);
+          setCompany(comp);
+          if (savedUser) {
+            setUser(JSON.parse(savedUser));
+          } else {
+            setUser({
+              id: 'master-primary-001',
+              company_id: comp.id,
+              name: 'Pablix (Suporte Master)',
+              email: 'pablixgamezgg@gmail.com',
+              role: 'ADMIN',
+              active: true,
+            });
+          }
+          setIsLoading(false);
+          return;
+        } catch {}
+      }
+
+      if (savedUser && savedCompany) {
+        try {
+          setUser(JSON.parse(savedUser));
+          setCompany(JSON.parse(savedCompany));
+        } catch {
+          setUser(DEMO_USER);
+          setCompany(DEMO_COMPANY);
+        }
+      } else {
         setUser(DEMO_USER);
         setCompany(DEMO_COMPANY);
       }
-    } else {
-      setUser(DEMO_USER);
-      setCompany(DEMO_COMPANY);
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+
+    syncAuth();
+    window.addEventListener('storage', syncAuth);
+    return () => window.removeEventListener('storage', syncAuth);
   }, []);
 
   const login = async (email: string): Promise<boolean> => {
