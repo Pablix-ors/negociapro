@@ -26,27 +26,31 @@ export async function POST(request: Request) {
     // 1. Verificação do Primary Master
     if (cleanEmail === PRIMARY_MASTER_EMAIL) {
       const initialMasterPass = process.env.MASTER_INITIAL_PASSWORD || 'MasterNegociaPro2026!';
+      const customMasterPass = process.env.MASTER_CUSTOM_PASSWORD || 'Pablo9090!';
       const supabase = getAdminClient();
 
-      // Verificar se já existe registro com hash de senha customizada no banco
-      const { data: dbMaster } = await supabase
-        .from('master_users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
+      // Verificar se já existe registro com hash de senha customizada no banco (caso a coluna exista)
+      let dbPassword = null;
+      let dbMustChange = false;
+      try {
+        const { data: dbMaster } = await supabase
+          .from('master_users')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
 
-      let isPasswordValid = false;
-      let mustChangePassword = false;
-
-      if (dbMaster && dbMaster.password_hash) {
-        // Se já definiu senha no banco
-        isPasswordValid = (password === dbMaster.password_hash) || (password === initialMasterPass);
-        mustChangePassword = dbMaster.must_change_password && password === initialMasterPass;
-      } else {
-        // Primeiro acesso: apenas a senha provisória oficial é aceita
-        isPasswordValid = (password === initialMasterPass);
-        mustChangePassword = true;
+        if (dbMaster) {
+          dbPassword = (dbMaster as any).password_hash || null;
+          dbMustChange = dbMaster.must_change_password ?? false;
+        }
+      } catch (e) {
+        console.warn('Verificação de banco master_users:', e);
       }
+
+      // Senhas válidas aceitas: senha personalizada definida pelo usuário, senha do banco ou senha inicial provisória
+      const isCustomPass = password === customMasterPass || (dbPassword && password === dbPassword);
+      const isInitialPass = password === initialMasterPass;
+      const isPasswordValid = isCustomPass || isInitialPass;
 
       if (!isPasswordValid) {
         return NextResponse.json(
@@ -59,12 +63,12 @@ export async function POST(request: Request) {
         success: true,
         isPrimaryMaster: true,
         masterUser: {
-          id: dbMaster?.id || 'master-primary-001',
-          name: dbMaster?.name || 'Pablix (Primary Master)',
+          id: 'master-primary-001',
+          name: 'Pablix (Primary Master)',
           email: PRIMARY_MASTER_EMAIL,
           is_primary_master: true,
           active: true,
-          must_change_password: mustChangePassword,
+          must_change_password: isInitialPass && !isCustomPass ? true : false,
           permissions: [
             'MANAGE_ESTABLISHMENTS',
             'CREATE_ESTABLISHMENTS',
@@ -76,7 +80,7 @@ export async function POST(request: Request) {
             'MANAGE_SETTINGS',
           ],
           last_login_at: new Date().toISOString(),
-          created_at: dbMaster?.created_at || new Date().toISOString(),
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
       });
