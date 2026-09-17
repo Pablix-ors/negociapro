@@ -11,12 +11,13 @@ import {
   Plus,
   Search,
   CheckCircle2,
-  XCircle,
   Ban,
+  Trash2,
   ExternalLink,
   Edit2,
   Eye,
   AlertCircle,
+  AlertTriangle,
   X,
   Check,
   Building,
@@ -25,6 +26,7 @@ import {
   Phone,
   ArrowLeft,
   Calendar,
+  ShieldAlert,
 } from 'lucide-react';
 
 export default function MasterEstabelecimentosPage() {
@@ -34,20 +36,28 @@ export default function MasterEstabelecimentosPage() {
     createEstablishment,
     updateEstablishment,
     setEstablishmentStatus,
+    deleteEstablishment,
   } = useMaster();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | CompanyStatus>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATIVO' | 'BLOQUEADO'>('ALL');
 
   // Modais de Criação / Edição
   const [modalOpen, setModalOpen] = useState(false);
   const [editingComp, setEditingComp] = useState<Company | null>(null);
 
-  // Modal de Ações de Bloqueio/Status
+  // Modal de Ação de Bloqueio / Desbloqueio
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [selectedCompForStatus, setSelectedCompForStatus] = useState<Company | null>(null);
   const [targetStatus, setTargetStatus] = useState<CompanyStatus>('ATIVO');
   const [statusReason, setStatusReason] = useState('');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Modal de Exclusão Definitiva (Deletar tudo)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [selectedCompForDelete, setSelectedCompForDelete] = useState<Company | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Formulário de Cadastro/Edição
   const [name, setName] = useState('');
@@ -77,7 +87,10 @@ export default function MasterEstabelecimentosPage() {
       (c.city && c.city.toLowerCase().includes(q)) ||
       (c.email && c.email.toLowerCase().includes(q));
 
-    const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'ALL' ||
+      c.status === statusFilter ||
+      (statusFilter === 'BLOQUEADO' && c.status === 'INATIVO');
     return matchesSearch && matchesStatus;
   });
 
@@ -179,14 +192,30 @@ export default function MasterEstabelecimentosPage() {
   const handleOpenStatusModal = (comp: Company, newStatus: CompanyStatus) => {
     setSelectedCompForStatus(comp);
     setTargetStatus(newStatus);
-    setStatusReason('');
+    setStatusReason(comp.blocked_reason || '');
     setStatusModalOpen(true);
   };
 
-  const handleConfirmStatus = () => {
+  const handleConfirmStatus = async () => {
     if (!selectedCompForStatus) return;
-    setEstablishmentStatus(selectedCompForStatus.id, targetStatus, statusReason);
+    setIsUpdatingStatus(true);
+    await setEstablishmentStatus(selectedCompForStatus.id, targetStatus, statusReason);
+    setIsUpdatingStatus(false);
     setStatusModalOpen(false);
+  };
+
+  const handleOpenDeleteModal = (comp: Company) => {
+    setSelectedCompForDelete(comp);
+    setDeleteConfirmText('');
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedCompForDelete) return;
+    setIsDeleting(true);
+    await deleteEstablishment(selectedCompForDelete.id);
+    setIsDeleting(false);
+    setDeleteModalOpen(false);
   };
 
   return (
@@ -231,18 +260,24 @@ export default function MasterEstabelecimentosPage() {
         </div>
 
         <div className="flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {(['ALL', 'ATIVO', 'INATIVO', 'BLOQUEADO'] as const).map((st) => (
+          {(
+            [
+              { key: 'ALL', label: 'Todos' },
+              { key: 'ATIVO', label: 'Ativos' },
+              { key: 'BLOQUEADO', label: 'Bloqueados' },
+            ] as const
+          ).map((st) => (
             <button
-              key={st}
+              key={st.key}
               type="button"
-              onClick={() => setStatusFilter(st)}
+              onClick={() => setStatusFilter(st.key)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
-                statusFilter === st
+                statusFilter === st.key
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
                   : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              {st === 'ALL' ? 'Todos' : st}
+              {st.label}
             </button>
           ))}
         </div>
@@ -340,34 +375,34 @@ export default function MasterEstabelecimentosPage() {
                         </button>
 
                         {comp.status === 'ATIVO' ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStatusModal(comp, 'INATIVO')}
-                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition-colors cursor-pointer"
-                              title="Desativar estabelecimento"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStatusModal(comp, 'BLOQUEADO')}
-                              className="p-1.5 bg-slate-800 hover:bg-rose-950/60 text-rose-400 rounded-lg transition-colors cursor-pointer"
-                              title="Bloquear estabelecimento"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenStatusModal(comp, 'BLOQUEADO')}
+                            className="p-1.5 bg-slate-800 hover:bg-amber-950/40 text-amber-400 hover:text-amber-300 rounded-lg transition-colors cursor-pointer"
+                            title="Bloquear / Desativar estabelecimento"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => handleOpenStatusModal(comp, 'ATIVO')}
-                            className="px-2 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                            title="Ativar estabelecimento"
+                            className="px-2.5 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
+                            title="Desbloquear / Ativar estabelecimento"
                           >
-                            Ativar
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Ativar</span>
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeleteModal(comp)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 rounded-lg transition-colors cursor-pointer"
+                          title="Excluir estabelecimento e todos os dados vinculados"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -403,9 +438,7 @@ export default function MasterEstabelecimentosPage() {
                     className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
                       comp.status === 'ATIVO'
                         ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                        : comp.status === 'BLOQUEADO'
-                        ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                        : 'bg-slate-800 text-slate-400'
+                        : 'bg-rose-950 text-rose-400 border border-rose-800'
                     }`}
                   >
                     {comp.status}
@@ -434,6 +467,7 @@ export default function MasterEstabelecimentosPage() {
                     type="button"
                     onClick={() => openEditModal(comp)}
                     className="p-2 bg-slate-800 text-slate-300 rounded-xl"
+                    title="Editar"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
@@ -442,7 +476,8 @@ export default function MasterEstabelecimentosPage() {
                     <button
                       type="button"
                       onClick={() => handleOpenStatusModal(comp, 'BLOQUEADO')}
-                      className="p-2 bg-rose-950 text-rose-400 border border-rose-800 rounded-xl"
+                      className="p-2 bg-amber-950/40 text-amber-400 border border-amber-800/60 rounded-xl"
+                      title="Bloquear"
                     >
                       <Ban className="w-4 h-4" />
                     </button>
@@ -450,11 +485,21 @@ export default function MasterEstabelecimentosPage() {
                     <button
                       type="button"
                       onClick={() => handleOpenStatusModal(comp, 'ATIVO')}
-                      className="p-2 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-xl font-bold text-xs"
+                      className="px-3 py-2 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-xl font-bold text-xs"
+                      title="Ativar"
                     >
                       Ativar
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDeleteModal(comp)}
+                    className="p-2 bg-rose-950/40 text-rose-400 border border-rose-800/60 rounded-xl"
+                    title="Excluir estabelecimento"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))
@@ -638,17 +683,20 @@ export default function MasterEstabelecimentosPage() {
         </div>
       )}
 
-      {/* Modal de Alteração de Status (Ativar / Desativar / Bloquear com Motivo) */}
+      {/* Modal de Alteração de Status (Bloquear / Ativar) */}
       {statusModalOpen && selectedCompForStatus && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-slate-900 max-w-md w-full rounded-2xl p-6 border border-slate-800 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-2 flex items-center space-x-2">
-              <AlertCircle className="w-5 h-5 text-amber-400" />
-              <span>Confirmar Alteração de Status</span>
+              <AlertCircle className={`w-5 h-5 ${targetStatus === 'BLOQUEADO' ? 'text-amber-400' : 'text-emerald-400'}`} />
+              <span>{targetStatus === 'BLOQUEADO' ? 'Bloquear Estabelecimento' : 'Ativar Estabelecimento'}</span>
             </h3>
 
             <p className="text-xs text-slate-300 mb-4">
-              Você está prestes a alterar o status do estabelecimento <strong>{selectedCompForStatus.name}</strong> para <strong className="text-amber-400 uppercase">{targetStatus}</strong>.
+              Você está prestes a alterar o status do estabelecimento <strong>{selectedCompForStatus.name}</strong> para{' '}
+              <strong className={`uppercase ${targetStatus === 'BLOQUEADO' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {targetStatus === 'BLOQUEADO' ? 'BLOQUEADO / DESATIVADO' : 'ATIVO'}
+              </strong>.
             </p>
 
             {targetStatus === 'BLOQUEADO' && (
@@ -661,7 +709,7 @@ export default function MasterEstabelecimentosPage() {
                   rows={3}
                   value={statusReason}
                   onChange={(e) => setStatusReason(e.target.value)}
-                  placeholder="Ex: Inadimplência, violação de termos de uso..."
+                  placeholder="Ex: Inadimplência, suspensão temporária, violação de termos..."
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                 />
               </div>
@@ -671,16 +719,96 @@ export default function MasterEstabelecimentosPage() {
               <button
                 type="button"
                 onClick={() => setStatusModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 cursor-pointer"
+                disabled={isUpdatingStatus}
+                className="px-4 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleConfirmStatus}
-                className="px-4 py-2 text-xs font-black text-slate-950 bg-amber-500 hover:bg-amber-600 rounded-xl shadow-md cursor-pointer"
+                disabled={isUpdatingStatus}
+                className={`px-4 py-2 text-xs font-black rounded-xl shadow-md cursor-pointer disabled:opacity-50 flex items-center space-x-1.5 ${
+                  targetStatus === 'BLOQUEADO'
+                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
+                    : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
+                }`}
               >
-                Confirmar Alteração
+                {isUpdatingStatus ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <span>{targetStatus === 'BLOQUEADO' ? 'Confirmar Bloqueio' : 'Confirmar Ativação'}</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Exclusão Definitiva (Deletar tudo com Cascade) */}
+      {deleteModalOpen && selectedCompForDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 max-w-md w-full rounded-2xl p-6 border border-rose-900/60 shadow-2xl">
+            <div className="flex items-center space-x-2.5 text-rose-400 mb-3">
+              <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-black text-white">
+                Excluir Estabelecimento Definitivamente
+              </h3>
+            </div>
+
+            <div className="p-3.5 bg-rose-950/30 border border-rose-900/50 rounded-xl mb-4 space-y-1.5">
+              <p className="text-xs font-bold text-rose-300 flex items-center space-x-1">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>ATENÇÃO: Ação irreversível!</span>
+              </p>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Ao confirmar, o estabelecimento <strong>{selectedCompForDelete.name}</strong> e <strong>TODOS</strong> os seus dados vinculados (clientes, produtos, vendas, histórico de preços, comissões, configurações e usuários) serão apagados permanentemente do banco de dados.
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-2">
+              Para confirmar, digite <span className="font-mono font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded">EXCLUIR</span> no campo abaixo:
+            </p>
+
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Digite EXCLUIR"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white uppercase focus:outline-hidden focus:ring-2 focus:ring-rose-500 mb-4 font-mono font-bold"
+            />
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleteConfirmText.trim().toUpperCase() !== 'EXCLUIR' || isDeleting}
+                className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1.5"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Deletando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Deletar Tudo</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

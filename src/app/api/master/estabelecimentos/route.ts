@@ -99,3 +99,37 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
 }
+
+// DELETE: Excluir estabelecimento e todos os seus dados vinculados (Cascade)
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    let id = searchParams.get('id');
+
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body?.id;
+      } catch {}
+    }
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'ID do estabelecimento obrigatório' }, { status: 400 });
+    }
+
+    const supabase = getAdminClient();
+    const { error } = await supabase
+      .from('companies')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Erro ao deletar estabelecimento:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: 'Estabelecimento e dados vinculados excluídos com sucesso' });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
+  }
+}

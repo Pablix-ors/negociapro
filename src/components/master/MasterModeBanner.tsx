@@ -19,6 +19,11 @@ export default function MasterModeBanner() {
           <span className="bg-slate-950 text-amber-400 px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-black">
             MODO MASTER ATIVO
           </span>
+          {(impersonatedCompany.status === 'BLOQUEADO' || impersonatedCompany.status === 'INATIVO') && (
+            <span className="bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-black">
+              ESTABELECIMENTO BLOQUEADO
+            </span>
+          )}
           <span className="text-slate-900 truncate">
             Você está acessando administrativamente: <strong className="underline decoration-slate-900/40">{impersonatedCompany.name}</strong> {impersonatedCompany.cnpj ? `(CNPJ: ${impersonatedCompany.cnpj})` : ''}
           </span>

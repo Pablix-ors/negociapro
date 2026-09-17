@@ -55,7 +55,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (savedUser && savedCompany) {
         try {
           setUser(JSON.parse(savedUser));
-          setCompany(JSON.parse(savedCompany));
+          const parsedComp: Company = JSON.parse(savedCompany);
+          
+          // Verificar se o status da empresa foi alterado na lista de estabelecimentos master
+          const masterCompaniesStr = localStorage.getItem('negociapro_master_companies');
+          if (masterCompaniesStr) {
+            try {
+              const masterList: Company[] = JSON.parse(masterCompaniesStr);
+              const found = masterList.find((c) => c.id === parsedComp.id);
+              if (found) {
+                parsedComp.status = found.status;
+                parsedComp.blocked_reason = found.blocked_reason;
+              }
+            } catch {}
+          }
+          
+          setCompany(parsedComp);
         } catch {
           setUser(DEMO_USER);
           setCompany(DEMO_COMPANY);

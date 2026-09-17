@@ -22,8 +22,7 @@ export default function MasterDashboardPage() {
 
   const totalCompanies = companies.length;
   const activeCompanies = companies.filter((c) => c.status === 'ATIVO').length;
-  const inactiveCompanies = companies.filter((c) => c.status === 'INATIVO').length;
-  const blockedCompanies = companies.filter((c) => c.status === 'BLOQUEADO').length;
+  const blockedCompanies = companies.filter((c) => c.status === 'BLOQUEADO' || c.status === 'INATIVO').length;
 
   const recentCompanies = companies.slice(0, 5);
   const recentLogs = auditLogs.slice(0, 6);
@@ -57,8 +56,8 @@ export default function MasterDashboardPage() {
         </div>
       </div>
 
-      {/* Cards de Métricas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Cards de Métricas (Unificados) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
@@ -88,27 +87,14 @@ export default function MasterDashboardPage() {
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Inativos
-            </span>
-            <span className="p-2 bg-slate-500/10 text-slate-400 rounded-xl">
-              <XCircle className="w-4 h-4" />
-            </span>
-          </div>
-          <p className="text-2xl font-black text-slate-300 mt-2">{inactiveCompanies}</p>
-          <span className="text-[11px] text-slate-500 mt-1 block">Acesso suspenso temporariamente</span>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Bloqueados
+              Bloqueados / Desativados
             </span>
             <span className="p-2 bg-rose-500/10 text-rose-400 rounded-xl">
               <Ban className="w-4 h-4" />
             </span>
           </div>
           <p className="text-2xl font-black text-rose-400 mt-2">{blockedCompanies}</p>
-          <span className="text-[11px] text-slate-500 mt-1 block">Bloqueio administrativo</span>
+          <span className="text-[11px] text-slate-500 mt-1 block">Acesso restrito administrativamente</span>
         </div>
       </div>
 

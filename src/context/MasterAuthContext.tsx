@@ -19,7 +19,8 @@ interface MasterContextType {
   exitCompany: () => void;
   createEstablishment: (companyData: Partial<Company>) => Company;
   updateEstablishment: (id: string, updatedFields: Partial<Company>) => void;
-  setEstablishmentStatus: (id: string, status: CompanyStatus, reason?: string) => void;
+  setEstablishmentStatus: (id: string, status: CompanyStatus, reason?: string) => Promise<boolean>;
+  deleteEstablishment: (id: string) => Promise<boolean>;
   createMasterUser: (userData: Omit<MasterUser, 'id' | 'created_at' | 'updated_at' | 'is_primary_master'>) => MasterUser;
   updateMasterUser: (id: string, updatedFields: Partial<MasterUser>) => void;
   deleteMasterUser: (id: string) => boolean;
@@ -408,41 +409,115 @@ export function MasterAuthProvider({ children }: { children: React.ReactNode }) 
     );
   };
 
-  const setEstablishmentStatus = (id: string, status: CompanyStatus, reason?: string) => {
-    const updated = companies.map((c) => {
-      if (c.id === id) {
-        return {
-          ...c,
+  const setEstablishmentStatus = async (id: string, status: CompanyStatus, reason?: string): Promise<boolean> => {
+    try {
+      const updated = companies.map((c) => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status,
+            blocked_reason: status === 'BLOQUEADO' ? reason || 'Bloqueado pela administração Master' : null,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return c;
+      });
+
+      setCompanies(updated);
+      localStorage.setItem('negociapro_master_companies', JSON.stringify(updated));
+
+      // Se a empresa alterada for a empresa em impersonation ou sincronizada no dashboard, sincronizar também
+      if (impersonatedCompany?.id === id) {
+        const updatedComp = updated.find((c) => c.id === id) || null;
+        setImpersonatedCompany(updatedComp);
+        if (updatedComp) {
+          localStorage.setItem('negociapro_master_impersonated', JSON.stringify(updatedComp));
+          localStorage.setItem('negociapro_company', JSON.stringify(updatedComp));
+        }
+      }
+
+      // Persistir status no Supabase de forma confiável
+      const res = await fetch('/api/master/estabelecimentos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
           status,
           blocked_reason: status === 'BLOQUEADO' ? reason || 'Bloqueado pela administração Master' : null,
-          updated_at: new Date().toISOString(),
-        };
-      }
-      return c;
-    });
+        }),
+      });
 
-    setCompanies(updated);
-    localStorage.setItem('negociapro_master_companies', JSON.stringify(updated));
-
-    // Persistir status no Supabase
-    fetch('/api/master/estabelecimentos', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      const target = companies.find((c) => c.id === id);
+      const action = status === 'ATIVO' ? 'ACTIVATE_ESTABLISHMENT' : 'BLOCK_ESTABLISHMENT';
+      addAuditLog(
+        action,
+        `Status do estabelecimento alterado para ${status}${reason ? ` (Motivo: ${reason})` : ''}`,
         id,
-        status,
-        blocked_reason: status === 'BLOQUEADO' ? reason || 'Bloqueado pela administração Master' : null,
-      }),
-    }).catch((err) => console.error('Erro ao atualizar status no Supabase:', err));
+        target?.name
+      );
 
-    const target = companies.find((c) => c.id === id);
-    const action = status === 'ATIVO' ? 'ACTIVATE_ESTABLISHMENT' : status === 'BLOQUEADO' ? 'BLOCK_ESTABLISHMENT' : 'DISABLE_ESTABLISHMENT';
-    addAuditLog(
-      action,
-      `Status do estabelecimento alterado para ${status}${reason ? ` (Motivo: ${reason})` : ''}`,
-      id,
-      target?.name
-    );
+      return res.ok;
+    } catch (err) {
+      console.error('Erro ao atualizar status:', err);
+      return false;
+    }
+  };
+
+  const deleteEstablishment = async (id: string): Promise<boolean> => {
+    try {
+      const target = companies.find((c) => c.id === id);
+      const targetName = target?.name || id;
+
+      // 1. Chamar API para deleção completa no banco real Supabase (ON DELETE CASCADE)
+      const res = await fetch(`/api/master/estabelecimentos?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+
+      // 2. Atualizar estado local de estabelecimentos
+      const updated = companies.filter((c) => c.id !== id);
+      setCompanies(updated);
+      localStorage.setItem('negociapro_master_companies', JSON.stringify(updated));
+
+      // 3. Se o Master estava impersonando essa empresa, encerra o acesso
+      if (impersonatedCompany?.id === id) {
+        exitCompany();
+      }
+
+      // 4. Se a sessão ativa local do navegador pertencia a essa empresa, limpa a sessão
+      const currentActiveCompany = localStorage.getItem('negociapro_company');
+      if (currentActiveCompany) {
+        try {
+          const parsed = JSON.parse(currentActiveCompany);
+          if (parsed.id === id) {
+            localStorage.removeItem('negociapro_company');
+            localStorage.removeItem('negociapro_user');
+          }
+        } catch {}
+      }
+
+      // 5. Limpar dados isolados do tenant no cache local
+      const tenantKey = `_tenant_${id}`;
+      localStorage.removeItem(`negociapro_customers${tenantKey}`);
+      localStorage.removeItem(`negociapro_products${tenantKey}`);
+      localStorage.removeItem(`negociapro_sales${tenantKey}`);
+      localStorage.removeItem(`negociapro_professionals${tenantKey}`);
+      localStorage.removeItem(`negociapro_commissions${tenantKey}`);
+      localStorage.removeItem(`negociapro_history${tenantKey}`);
+      localStorage.removeItem(`negociapro_notifications${tenantKey}`);
+
+      // 6. Registrar na trilha de auditoria
+      addAuditLog(
+        'DELETE_ESTABLISHMENT',
+        `Estabelecimento e todos os seus dados vinculados foram excluídos permanentemente: ${targetName}`,
+        id,
+        targetName
+      );
+
+      return res.ok;
+    } catch (err) {
+      console.error('Erro ao deletar estabelecimento:', err);
+      return false;
+    }
   };
 
   // Gestão de Masters
@@ -508,6 +583,7 @@ export function MasterAuthProvider({ children }: { children: React.ReactNode }) 
         createEstablishment,
         updateEstablishment,
         setEstablishmentStatus,
+        deleteEstablishment,
         createMasterUser,
         updateMasterUser,
         deleteMasterUser,
