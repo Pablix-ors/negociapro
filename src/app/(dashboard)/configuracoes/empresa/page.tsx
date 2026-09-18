@@ -3,10 +3,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { maskCNPJ, maskPhone, maskCEP } from '@/lib/formatters';
-import { Building2, Check, AlertCircle, Sparkles } from 'lucide-react';
+import { Building2, Check, AlertCircle, Sparkles, Copy, Database, Key } from 'lucide-react';
 
 export default function EmpresaConfigPage() {
   const { company, updateCompany } = useAuth();
+  const [copiedId, setCopiedId] = useState(false);
 
   const [formData, setFormData] = useState({
     name: company?.name || '',
@@ -55,6 +56,56 @@ export default function EmpresaConfigPage() {
       )}
 
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6">
+        {/* ID do Estabelecimento no Banco de Dados (Pronto para Cópia Rápida) */}
+        <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-200/60 flex items-center justify-center shrink-0">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  ID do Estabelecimento no Banco
+                </span>
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-[10px] font-black">
+                  UUID
+                </span>
+              </div>
+              <div className="font-mono text-xs font-bold text-slate-800 break-all select-all mt-0.5">
+                {company?.id || 'demo-company'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (company?.id) {
+                navigator.clipboard.writeText(company.id);
+                setCopiedId(true);
+                setTimeout(() => setCopiedId(false), 2500);
+              }
+            }}
+            className={`inline-flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs active:scale-95 ${
+              copiedId
+                ? 'bg-emerald-600 text-white'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+            }`}
+          >
+            {copiedId ? (
+              <>
+                <Check className="w-4 h-4 text-white" />
+                <span>ID Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-slate-500" />
+                <span>Copiar ID</span>
+              </>
+            )}
+          </button>
+        </div>
+
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
             Identificação Corporativa

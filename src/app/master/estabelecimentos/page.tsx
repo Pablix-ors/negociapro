@@ -27,6 +27,8 @@ import {
   ArrowLeft,
   Calendar,
   ShieldAlert,
+  Copy,
+  Database,
 } from 'lucide-react';
 
 export default function MasterEstabelecimentosPage() {
@@ -38,6 +40,8 @@ export default function MasterEstabelecimentosPage() {
     setEstablishmentStatus,
     deleteEstablishment,
   } = useMaster();
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATIVO' | 'BLOQUEADO'>('ALL');
@@ -329,6 +333,31 @@ export default function MasterEstabelecimentosPage() {
                     <td className="p-4">
                       <div className="font-bold text-white text-sm">{comp.name}</div>
                       <div className="text-[11px] text-slate-400">{comp.trade_name || '—'}</div>
+                      <div className="mt-1.5 flex items-center space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(comp.id);
+                            setCopiedId(comp.id);
+                            setTimeout(() => setCopiedId(null), 2000);
+                          }}
+                          title="Clique para copiar o ID UUID do banco"
+                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-300 font-mono text-[10px] border border-slate-700/80 transition-all cursor-pointer group"
+                        >
+                          <Database className="w-3 h-3 text-slate-400 group-hover:text-amber-400" />
+                          <span>ID: {comp.id.length > 18 ? `${comp.id.substring(0, 8)}...${comp.id.substring(comp.id.length - 4)}` : comp.id}</span>
+                          {copiedId === comp.id ? (
+                            <Check className="w-3 h-3 text-emerald-400 ml-0.5" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-slate-400 ml-0.5" />
+                          )}
+                        </button>
+                        {copiedId === comp.id && (
+                          <span className="text-[10px] font-bold text-emerald-400 animate-in fade-in">
+                            Copiado!
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4 font-mono text-slate-300">{comp.cnpj ? maskCNPJ(comp.cnpj) : '—'}</td>
                     <td className="p-4 text-slate-300">
@@ -529,6 +558,30 @@ export default function MasterEstabelecimentosPage() {
               <div className="mt-4 p-3 bg-rose-950/70 border border-rose-800 rounded-xl flex items-center space-x-2 text-xs text-rose-300">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {editingComp && (
+              <div className="mt-3 p-3 bg-slate-800/90 border border-slate-700/80 rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-2.5">
+                  <Database className="w-4 h-4 text-amber-400" />
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">ID do Banco (UUID)</span>
+                    <span className="font-mono text-xs text-amber-200 break-all select-all font-semibold">{editingComp.id}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(editingComp.id);
+                    setCopiedId(editingComp.id);
+                    setTimeout(() => setCopiedId(null), 2000);
+                  }}
+                  className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-lg flex items-center space-x-1 cursor-pointer transition-colors"
+                >
+                  {copiedId === editingComp.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedId === editingComp.id ? 'Copiado!' : 'Copiar ID'}</span>
+                </button>
               </div>
             )}
 

@@ -144,6 +144,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setProducts(isDemo ? DEMO_PRODUCTS : []);
     }
 
+    // Se a empresa possui ID real (como Ração mais barato ltda), carregar produtos reais do Supabase / API
+    if (company?.id && !isDemo) {
+      fetch(`/api/products?company_id=${company.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.products && data.products.length > 0) {
+            setProducts(data.products);
+            localStorage.setItem(`negociapro_products${key}`, JSON.stringify(data.products));
+          }
+        })
+        .catch(() => {
+          // Fallback caso esteja offline: verificar se há arquivo estático disponível para esta empresa
+          if (company.name?.toLowerCase().includes('ração mais barato') || company.id === '2bcee844-9475-4175-ae47-e0f6f53dbb09') {
+            fetch('/racao_mais_barato_products.json')
+              .then((r) => r.json())
+              .then((cachedList) => {
+                if (Array.isArray(cachedList) && cachedList.length > 0) {
+                  setProducts(cachedList);
+                  localStorage.setItem(`negociapro_products${key}`, JSON.stringify(cachedList));
+                }
+              })
+              .catch(() => {});
+          }
+        });
+    }
+
     if (savedSales) {
       try { setSales(JSON.parse(savedSales)); } catch {}
     } else {
