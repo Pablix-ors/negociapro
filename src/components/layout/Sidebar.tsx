@@ -17,6 +17,8 @@ import {
   Award,
   DollarSign,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useMaster } from '@/context/MasterAuthContext';
 import InstallPWAButton from '@/components/pwa/InstallPWAButton';
 
 const commercialNavigation = [
@@ -24,19 +26,24 @@ const commercialNavigation = [
   { name: 'Vendas', href: '/vendas', icon: ShoppingCart },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Produtos', href: '/produtos', icon: Package },
-  { name: 'Profissionais', href: '/profissionais', icon: Award },
-  { name: 'Financeiro', href: '/financeiro', icon: DollarSign },
+  { name: 'Profissionais', href: '/profissionais', icon: Award, adminOnly: true },
+  { name: 'Financeiro', href: '/financeiro', icon: DollarSign, adminOnly: true },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
 
 const configNavigation = [
-  { name: 'Minha Empresa', href: '/configuracoes/empresa', icon: Building2 },
-  { name: 'Usuários', href: '/configuracoes/usuarios', icon: UserCheck },
-  { name: 'Preferências', href: '/configuracoes/preferencias', icon: Sliders },
+  { name: 'Minha Empresa', href: '/configuracoes/empresa', icon: Building2, adminOnly: true },
+  { name: 'Usuários', href: '/configuracoes/usuarios', icon: UserCheck, adminOnly: true },
+  { name: 'Preferências', href: '/configuracoes/preferencias', icon: Sliders, adminOnly: true },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const { impersonatedCompany } = useMaster();
+
+  const isOwnerOrAdmin = Boolean(impersonatedCompany) || user?.role === 'ADMIN' || user?.role === 'GERENTE';
+  const isProfessional = user?.role === 'VENDEDOR';
 
   return (
     <aside className="hidden lg:flex lg:flex-col w-64 bg-slate-900 text-slate-200 border-r border-slate-800 shrink-0">
@@ -58,12 +65,28 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      {/* Slogan Banner */}
-      <div className="mx-4 my-3 px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center space-x-2">
-        <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-        <p className="text-[11px] text-slate-300 italic font-medium leading-tight">
-          Venda com histórico. Negocie com inteligência.
-        </p>
+      {/* Slogan Banner e Identificador do Tipo de Usuário */}
+      <div className="mx-4 my-3 space-y-2">
+        <div className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center space-x-2">
+          <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <p className="text-[11px] text-slate-300 italic font-medium leading-tight">
+            Venda com histórico. Negocie com inteligência.
+          </p>
+        </div>
+
+        <div className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between border ${
+          isOwnerOrAdmin
+            ? 'bg-blue-950/70 text-blue-300 border-blue-800/60'
+            : 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60'
+        }`}>
+          <span className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${isOwnerOrAdmin ? 'bg-blue-400 animate-pulse' : 'bg-emerald-400'}`} />
+            {isOwnerOrAdmin ? 'Dono / Administrador' : 'Profissional / Vendedor'}
+          </span>
+          <span className="text-[9px] uppercase tracking-wider font-mono opacity-80">
+            {user?.role || 'ACESSO'}
+          </span>
+        </div>
       </div>
 
       {/* Navigation Links */}
@@ -73,52 +96,56 @@ export default function Sidebar() {
             Comercial
           </span>
           <nav className="mt-2 space-y-1">
-            {commercialNavigation.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                  <span>{item.name}</span>
-                </Link>
-              );
-            })}
+            {commercialNavigation
+              .filter((item) => !item.adminOnly || isOwnerOrAdmin)
+              .map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
           </nav>
         </div>
 
-        <div>
-          <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Configurações
-          </span>
-          <nav className="mt-2 space-y-1">
-            {configNavigation.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                  <span>{item.name}</span>
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+        {isOwnerOrAdmin && (
+          <div>
+            <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Configurações
+            </span>
+            <nav className="mt-2 space-y-1">
+              {configNavigation.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        )}
       </div>
 
       {/* Botão de Instalar App PWA */}

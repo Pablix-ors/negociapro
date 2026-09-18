@@ -72,7 +72,7 @@ export default function DashboardPage() {
 
   // Gráfico: Vendas por Profissional
   const professionalChartData = professionals.map((p) => ({
-    name: p.name.split(' ')[0],
+    name: (p.name || 'Profissional').split(' ')[0],
     total: p.total_sales || 0,
     comissao: p.commission_earned || 0,
   }));

@@ -220,7 +220,9 @@ export default function Topbar() {
                 className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs ${
                   isMasterImpersonating
                     ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
-                    : 'bg-blue-100 text-blue-700 border-blue-200'
+                    : user?.role === 'ADMIN'
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-emerald-100 text-emerald-800 border-emerald-300'
                 }`}
               >
                 {isMasterImpersonating ? (
@@ -234,11 +236,23 @@ export default function Topbar() {
                   {displayName}
                 </span>
                 <span
-                  className={`text-[10px] font-semibold uppercase tracking-wider block ${
-                    isMasterImpersonating ? 'text-amber-600 font-black' : 'text-blue-600'
+                  className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    isMasterImpersonating
+                      ? 'text-amber-600 font-black'
+                      : user?.role === 'ADMIN'
+                      ? 'text-blue-700 font-black'
+                      : user?.role === 'GERENTE'
+                      ? 'text-indigo-600 font-bold'
+                      : 'text-emerald-700 font-bold'
                   }`}
                 >
-                  {displayRole}
+                  {isMasterImpersonating
+                    ? 'SUPORTE MASTER'
+                    : user?.role === 'ADMIN'
+                    ? 'DONO / ADMIN'
+                    : user?.role === 'GERENTE'
+                    ? 'GERENTE'
+                    : 'PROFISSIONAL'}
                 </span>
               </div>
             </button>

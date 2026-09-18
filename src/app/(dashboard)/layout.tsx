@@ -10,7 +10,10 @@ import MasterModeBanner from '@/components/master/MasterModeBanner';
 
 import { useAuth } from '@/context/AuthContext';
 import { Ban, ShieldAlert, LogOut, MessageSquare } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+
 function DashboardContent({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const { company, user, isLoading, logout } = useAuth();
   const isMasterSession = typeof window !== 'undefined' && !!localStorage.getItem('negociapro_master_impersonated');
   const isBlocked = (company?.status === 'BLOQUEADO' || company?.status === 'INATIVO');
@@ -18,9 +21,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   // Redirecionar para tela de login se não estiver logado
   React.useEffect(() => {
     if (!isLoading && !user && !isMasterSession) {
-      window.location.href = '/login';
+      router.replace('/login');
     }
-  }, [isLoading, user, isMasterSession]);
+  }, [isLoading, user, isMasterSession, router]);
 
   if (isLoading) {
     return (
