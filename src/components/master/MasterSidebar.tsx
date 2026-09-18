@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   LogOut,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react';
 
 interface MasterSidebarProps {
@@ -33,6 +34,12 @@ export default function MasterSidebar({ onCloseMobile }: MasterSidebarProps) {
       name: 'Estabelecimentos',
       href: '/master/estabelecimentos',
       icon: Building2,
+    },
+    {
+      name: 'Demonstração',
+      href: '/demonstracao',
+      icon: Sparkles,
+      badge: 'Demo',
     },
     {
       name: 'Usuários Master',

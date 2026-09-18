@@ -36,7 +36,7 @@ const DEFAULT_USERS: Profile[] = [
 ];
 
 export default function UsuariosConfigPage() {
-  const { user } = useAuth();
+  const { user, company } = useAuth();
 
   const [usersList, setUsersList] = useState<Profile[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -44,22 +44,39 @@ export default function UsuariosConfigPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('VENDEDOR');
 
-  // Carregar usuários salvos do localStorage
+  const isDemo = !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company';
+  const tenantStorageKey = company?.id ? `negociapro_users_list_tenant_${company.id}` : 'negociapro_users_list';
+
+  // Carregar usuários salvos do localStorage de acordo com a empresa
   useEffect(() => {
-    const raw = localStorage.getItem('negociapro_users_list');
+    const raw = localStorage.getItem(tenantStorageKey);
     if (raw) {
       try {
-        setUsersList(JSON.parse(raw));
+        const parsed: Profile[] = JSON.parse(raw);
+        if (!isDemo) {
+          const sanitized = parsed.filter(u => u.company_id !== 'a0000000-0000-0000-0000-000000000001' && u.name !== 'Carlos Vendedor Master');
+          setUsersList(sanitized);
+        } else {
+          setUsersList(parsed);
+        }
         return;
       } catch {}
     }
-    setUsersList(DEFAULT_USERS);
-    localStorage.setItem('negociapro_users_list', JSON.stringify(DEFAULT_USERS));
-  }, []);
+    
+    // Se não for demo, começar apenas com o usuário atual autenticado ou vazio
+    if (!isDemo) {
+      const initialUsers: Profile[] = user ? [user] : [];
+      setUsersList(initialUsers);
+      localStorage.setItem(tenantStorageKey, JSON.stringify(initialUsers));
+    } else {
+      setUsersList(DEFAULT_USERS);
+      localStorage.setItem(tenantStorageKey, JSON.stringify(DEFAULT_USERS));
+    }
+  }, [tenantStorageKey, isDemo, user]);
 
   const saveUsersState = (newList: Profile[]) => {
     setUsersList(newList);
-    localStorage.setItem('negociapro_users_list', JSON.stringify(newList));
+    localStorage.setItem(tenantStorageKey, JSON.stringify(newList));
   };
 
   const handleAddUser = (e: React.FormEvent) => {
@@ -78,6 +95,56 @@ export default function UsuariosConfigPage() {
     setNewEmail('');
   };
 
+  const isAdmin = user?.role === 'ADMIN';
+  const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleRoleChange = async (userId: string, userEmail: string, newRole: UserRole) => {
+    if (!isAdmin) {
+      setFeedbackMessage({ type: 'error', text: 'Apenas administradores podem alterar o cargo de usuários.' });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+      return;
+    }
+
+    setUpdatingRoleId(userId);
+
+    // 1. Atualizar imediatamente no estado local e localStorage
+    const updated = usersList.map((u) => (u.id === userId ? { ...u, role: newRole } : u));
+    saveUsersState(updated);
+
+    // Se o usuário atual for o mesmo alterado, atualizar o contexto local
+    if (user && (user.id === userId || user.email.toLowerCase() === userEmail.toLowerCase())) {
+      const updatedProfile = { ...user, role: newRole };
+      localStorage.setItem('negociapro_user', JSON.stringify(updatedProfile));
+    }
+
+    // 2. Persistir no Supabase via API backend
+    try {
+      const res = await fetch('/api/users/role', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          email: userEmail,
+          newRole,
+          requesterRole: user?.role || 'ADMIN',
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFeedbackMessage({ type: 'success', text: `Cargo atualizado para ${newRole} com sucesso!` });
+      } else {
+        setFeedbackMessage({ type: 'error', text: data.message || 'Erro ao sincronizar novo cargo no servidor.' });
+      }
+    } catch {
+      setFeedbackMessage({ type: 'success', text: `Cargo alterado localmente para ${newRole}.` });
+    } finally {
+      setUpdatingRoleId(null);
+      setTimeout(() => setFeedbackMessage(null), 3500);
+    }
+  };
+
   const toggleUserStatus = (id: string) => {
     const updated = usersList.map((u) => (u.id === id ? { ...u, active: !u.active } : u));
     saveUsersState(updated);
@@ -85,6 +152,26 @@ export default function UsuariosConfigPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {/* Feedback Banner */}
+      {feedbackMessage && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-between animate-in fade-in ${
+            feedbackMessage.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <span>{feedbackMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setFeedbackMessage(null)}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -96,14 +183,16 @@ export default function UsuariosConfigPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Convidar Usuário</span>
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Convidar Usuário</span>
+          </button>
+        )}
       </div>
 
       {/* Cards de Permissões */}
@@ -142,21 +231,46 @@ export default function UsuariosConfigPage() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {usersList.map((u) => (
-              <tr key={u.id} className="hover:bg-slate-50">
+              <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                 <td className="p-4 font-bold text-slate-900">{u.name}</td>
                 <td className="p-4 text-slate-600">{u.email}</td>
                 <td className="p-4">
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      u.role === 'ADMIN'
-                        ? 'bg-rose-50 text-rose-700'
-                        : u.role === 'GERENTE'
-                        ? 'bg-indigo-50 text-indigo-700'
-                        : 'bg-blue-50 text-blue-700'
-                    }`}
-                  >
-                    {u.role}
-                  </span>
+                  {isAdmin ? (
+                    <div className="inline-flex items-center space-x-1.5">
+                      <select
+                        value={u.role}
+                        disabled={updatingRoleId === u.id}
+                        onChange={(e) => handleRoleChange(u.id, u.email, e.target.value as UserRole)}
+                        title="Alterar cargo deste colaborador"
+                        className={`text-[11px] font-bold rounded-lg px-2.5 py-1 border cursor-pointer transition-all outline-hidden focus:ring-2 focus:ring-blue-500 ${
+                          u.role === 'ADMIN'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70'
+                            : u.role === 'GERENTE'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/70'
+                            : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70'
+                        } ${updatingRoleId === u.id ? 'opacity-50 pointer-events-none' : ''}`}
+                      >
+                        <option value="ADMIN">ADMIN</option>
+                        <option value="GERENTE">GERENTE</option>
+                        <option value="VENDEDOR">VENDEDOR</option>
+                      </select>
+                      {updatingRoleId === u.id && (
+                        <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      )}
+                    </div>
+                  ) : (
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        u.role === 'ADMIN'
+                          ? 'bg-rose-50 text-rose-700'
+                          : u.role === 'GERENTE'
+                          ? 'bg-indigo-50 text-indigo-700'
+                          : 'bg-blue-50 text-blue-700'
+                      }`}
+                    >
+                      {u.role}
+                    </span>
+                  )}
                 </td>
                 <td className="p-4 text-center">
                   {u.active ? (
@@ -170,13 +284,17 @@ export default function UsuariosConfigPage() {
                   )}
                 </td>
                 <td className="p-4 text-center">
-                  <button
-                    type="button"
-                    onClick={() => toggleUserStatus(u.id)}
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline"
-                  >
-                    {u.active ? 'Desativar' : 'Reativar'}
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleUserStatus(u.id)}
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                    >
+                      {u.active ? 'Desativar' : 'Reativar'}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 font-medium">Sem permissão</span>
+                  )}
                 </td>
               </tr>
             ))}

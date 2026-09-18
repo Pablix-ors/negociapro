@@ -177,7 +177,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (savedProfs) {
-      try { setProfessionals(JSON.parse(savedProfs)); } catch {}
+      try {
+        const parsedProfs: Professional[] = JSON.parse(savedProfs);
+        // Se a empresa não for demo, expurgar profissionais demo caso tenham sido herdados no passado
+        if (!isDemo) {
+          const sanitized = parsedProfs.filter(p => p.company_id !== 'a0000000-0000-0000-0000-000000000001' && p.id !== 'prof-01' && p.id !== 'prof-02');
+          setProfessionals(sanitized);
+        } else {
+          setProfessionals(parsedProfs);
+        }
+      } catch {
+        setProfessionals(isDemo ? DEMO_PROFESSIONALS : []);
+      }
     } else {
       setProfessionals(isDemo ? DEMO_PROFESSIONALS : []);
     }

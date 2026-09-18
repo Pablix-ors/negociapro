@@ -76,11 +76,12 @@ export default function ProfissionaisPage() {
     return matchesQuery && matchesStatus;
   });
 
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, company: currentCompany } = useAuth();
   const [enableLoginAccess, setEnableLoginAccess] = useState(false);
   const [loginRole, setLoginRole] = useState<UserRole>('VENDEDOR');
   const [tempPassword, setTempPassword] = useState('123456');
   const [showTempPass, setShowTempPass] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const openCreateModal = () => {
     setEditingProf(null);
@@ -116,7 +117,7 @@ export default function ProfissionaisPage() {
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError('O nome do profissional é obrigatório.');
@@ -128,74 +129,101 @@ export default function ProfissionaisPage() {
       return;
     }
 
-    if (editingProf) {
-      updateProfessional(editingProf.id, {
-        name,
-        document,
-        phone,
-        email,
-        role_title: roleTitle,
-        notes,
-        avatar_url: avatarUrl || null,
-      });
-    } else {
-      addProfessional({
-        name,
-        document,
-        phone,
-        email,
-        role_title: roleTitle,
-        notes,
-        avatar_url: avatarUrl || null,
-        active: true,
-      });
+    if (enableLoginAccess && tempPassword.length < 6) {
+      setError('A senha provisória deve ter pelo menos 6 caracteres.');
+      return;
+    }
 
-      // Se marcou para criar acesso de login ao sistema
-      if (enableLoginAccess && email.trim()) {
-        try {
-          const rawUsers = localStorage.getItem('negociapro_users_list');
-          const currentUsersList: Profile[] = rawUsers ? JSON.parse(rawUsers) : [];
-          const newUserProfile: Profile = {
-            id: `usr-${Date.now()}`,
-            company_id: currentUser?.company_id || 'demo-company',
-            name: name,
-            email: email.trim().toLowerCase(),
-            role: loginRole,
-            phone: phone || undefined,
-            active: true,
-          };
-          // Evitar duplicar e-mail se já existir
-          const filtered = currentUsersList.filter(u => u.email.toLowerCase() !== email.trim().toLowerCase());
-          filtered.push(newUserProfile);
-          localStorage.setItem('negociapro_users_list', JSON.stringify(filtered));
+    setError(null);
+    setIsSubmitting(true);
 
-          // Enviar e-mail de boas-vindas com dados de acesso via Resend (se configurado)
-          fetch('/api/auth/convite', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name,
-              email: email.trim(),
+    try {
+      if (editingProf) {
+        updateProfessional(editingProf.id, {
+          name,
+          document,
+          phone,
+          email,
+          role_title: roleTitle,
+          notes,
+          avatar_url: avatarUrl || null,
+        });
+      } else {
+        addProfessional({
+          name,
+          document,
+          phone,
+          email,
+          role_title: roleTitle,
+          notes,
+          avatar_url: avatarUrl || null,
+          active: true,
+        });
+
+        // Se marcou para criar acesso de login ao sistema
+        if (enableLoginAccess && email.trim()) {
+          const targetCompanyId = currentCompany?.id || currentUser?.company_id || 'demo-company';
+          const targetCompanyName = currentCompany?.trade_name || currentCompany?.name || currentUser?.name || 'NegociaPro';
+
+          // Salvar também em lista local para consistência offline imediata
+          try {
+            const rawUsers = localStorage.getItem('negociapro_users_list');
+            const currentUsersList: Profile[] = rawUsers ? JSON.parse(rawUsers) : [];
+            const newUserProfile: Profile = {
+              id: `usr-${Date.now()}`,
+              company_id: targetCompanyId,
+              name: name,
+              email: email.trim().toLowerCase(),
               role: loginRole,
-              tempPassword,
-              companyName: currentUser?.name || 'NegociaPro',
-            }),
-          }).catch(err => console.error('Erro ao disparar e-mail pelo Resend:', err));
+              phone: phone || undefined,
+              active: true,
+            };
+            const filtered = currentUsersList.filter(u => u.email.toLowerCase() !== email.trim().toLowerCase());
+            filtered.push(newUserProfile);
+            localStorage.setItem('negociapro_users_list', JSON.stringify(filtered));
+          } catch {}
 
-          // Abrir modal de compartilhamento imediato (WhatsApp / Copiar dados)
+          // Provisionar oficialmente no Supabase Auth + profiles table + enviar e-mail via Resend
+          try {
+            const res = await fetch('/api/auth/convite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name,
+                email: email.trim(),
+                phone: phone || '',
+                role: loginRole,
+                tempPassword,
+                companyId: targetCompanyId,
+                companyName: targetCompanyName,
+              }),
+            });
+
+            const data = await res.json();
+            if (!res.ok && !data.success) {
+              console.warn('Aviso ao provisionar credencial no backend:', data.message);
+            }
+          } catch (apiErr) {
+            console.error('Erro na chamada da rota /api/auth/convite:', apiErr);
+          }
+
+          // Abrir modal com as credenciais geradas (WhatsApp / Copiar dados)
           setCredentialsModal({
             name,
             email: email.trim(),
             role: loginRole,
             tempPass: tempPassword || '123456',
           });
-        } catch (err) {
-          console.error('Erro ao registrar usuário para login:', err);
         }
       }
-    }
 
-    setModalOpen(false);
+      setModalOpen(false);
+    } catch (err: any) {
+      console.error('Erro ao salvar profissional:', err);
+      setError(err?.message || 'Erro ao processar o cadastro do profissional.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Upload rápido de avatar com fallback
@@ -681,10 +709,20 @@ export default function ProfissionaisPage() {
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center space-x-1.5 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95"
+                  disabled={isSubmitting}
+                  className="inline-flex items-center space-x-1.5 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  <Check className="w-4 h-4" />
-                  <span>Salvar Profissional</span>
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Criando Acesso...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Salvar Profissional</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

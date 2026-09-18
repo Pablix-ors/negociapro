@@ -129,6 +129,8 @@ export interface Customer {
   neighborhood?: string | null;
   city?: string | null;
   state?: string | null;
+  registration_status?: string | null;
+  cnae?: string | null;
   notes?: string | null;
   active: boolean;
   created_at?: string;

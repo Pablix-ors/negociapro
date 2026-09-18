@@ -260,7 +260,7 @@ export default function Topbar() {
                     <span>Dados da Empresa</span>
                   </Link>
                   <Link
-                    href="/configuracoes/usuarios"
+                    href="/configuracoes/perfil"
                     onClick={() => setProfileDropdownOpen(false)}
                     className="flex items-center space-x-2.5 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-blue-600"
                   >

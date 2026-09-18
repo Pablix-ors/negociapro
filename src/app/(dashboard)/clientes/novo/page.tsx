@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useData } from '@/context/DataContext';
 import { maskCPF, maskCNPJ, maskPhone, maskCEP } from '@/lib/formatters';
 import { validateCPF, validateCNPJ, validateEmail } from '@/lib/validators';
-import { Users, Building2, User, ArrowLeft, Check, AlertCircle } from 'lucide-react';
+import { Users, Building2, User, ArrowLeft, Check, AlertCircle, Search, Sparkles, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function NovoClientePage() {
@@ -29,14 +29,93 @@ export default function NovoClientePage() {
   const [city, setCity] = useState('');
   const [state, setState] = useState('SP');
   const [notes, setNotes] = useState('');
+  const [registrationStatus, setRegistrationStatus] = useState<string | null>(null);
+  const [cnae, setCnae] = useState<string | null>(null);
+
+  // Estados de consulta CNPJAPI
+  const [isConsultingCnpj, setIsConsultingCnpj] = useState(false);
+  const [cnpjFeedback, setCnpjFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [lastConsultedCnpj, setLastConsultedCnpj] = useState<string>('');
 
   const [error, setError] = useState<string | null>(null);
 
   const handleDocumentChange = (val: string) => {
+    setCnpjFeedback(null);
     if (type === 'PF') {
       setDocument(maskCPF(val));
     } else {
       setDocument(maskCNPJ(val));
+    }
+  };
+
+  const handleConsultarCNPJ = async () => {
+    const clean = document.replace(/\D/g, '');
+    setCnpjFeedback(null);
+    setError(null);
+
+    // Validação preliminar do CNPJ
+    if (!clean || clean.length !== 14 || !validateCNPJ(clean)) {
+      setCnpjFeedback({
+        type: 'error',
+        message: 'CNPJ inválido. Verifique o número informado.',
+      });
+      return;
+    }
+
+    // Evitar consultas redundantes seguidas para o mesmo CNPJ
+    if (clean === lastConsultedCnpj && name) {
+      setCnpjFeedback({
+        type: 'success',
+        message: 'Os dados deste CNPJ já foram carregados no formulário.',
+      });
+      return;
+    }
+
+    setIsConsultingCnpj(true);
+
+    try {
+      const res = await fetch(`/api/cnpj?cnpj=${encodeURIComponent(clean)}`);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        setCnpjFeedback({
+          type: 'error',
+          message: result.message || 'Não foi possível consultar o CNPJ no momento. Tente novamente.',
+        });
+        setIsConsultingCnpj(false);
+        return;
+      }
+
+      const info = result.data;
+
+      // Preenchimento automático dos campos
+      if (info.name) setName(info.name);
+      if (info.tradeName) setTradeName(info.tradeName);
+      if (info.zipCode) setZipCode(info.zipCode);
+      if (info.street) setStreet(info.street);
+      if (info.number) setNumber(info.number);
+      if (info.complement) setComplement(info.complement);
+      if (info.neighborhood) setNeighborhood(info.neighborhood);
+      if (info.city) setCity(info.city);
+      if (info.state) setState(info.state);
+      if (info.phone) setPhone(info.phone);
+      if (info.email) setEmail(info.email);
+      if (info.registrationStatus) setRegistrationStatus(info.registrationStatus);
+      if (info.cnae) setCnae(info.cnae);
+
+      setLastConsultedCnpj(clean);
+      setCnpjFeedback({
+        type: 'success',
+        message: 'CNPJ consultado com sucesso. Dados preenchidos automaticamente.',
+      });
+    } catch (err: any) {
+      console.error('Erro na consulta CNPJ:', err);
+      setCnpjFeedback({
+        type: 'error',
+        message: 'Não foi possível consultar o CNPJ no momento. Tente novamente.',
+      });
+    } finally {
+      setIsConsultingCnpj(false);
     }
   };
 
@@ -83,6 +162,8 @@ export default function NovoClientePage() {
       neighborhood,
       city,
       state,
+      registration_status: type === 'PJ' ? registrationStatus : undefined,
+      cnae: type === 'PJ' ? cnae : undefined,
       notes,
       active: true,
     });
@@ -201,18 +282,95 @@ export default function NovoClientePage() {
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                {type === 'PF' ? 'CPF *' : 'CNPJ *'}
-              </label>
-              <input
-                type="text"
-                required
-                value={document}
-                onChange={(e) => handleDocumentChange(e.target.value)}
-                placeholder={type === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              />
+            <div className={type === 'PJ' ? 'md:col-span-2' : ''}>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  {type === 'PF' ? 'CPF *' : 'CNPJ *'}
+                </label>
+                {type === 'PJ' && (
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Consulta automática via CNPJAPI
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    required
+                    value={document}
+                    onChange={(e) => handleDocumentChange(e.target.value)}
+                    placeholder={type === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {type === 'PJ' && (
+                  <button
+                    type="button"
+                    onClick={handleConsultarCNPJ}
+                    disabled={isConsultingCnpj || document.replace(/\D/g, '').length < 14}
+                    className="inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shadow-indigo-600/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                    title="Consultar dados da empresa na Receita Federal via CNPJAPI"
+                  >
+                    {isConsultingCnpj ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Consultando CNPJ...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-3.5 h-3.5" />
+                        <span>Consultar CNPJ</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Mensagem de Feedback da Consulta CNPJ */}
+              {cnpjFeedback && (
+                <div
+                  className={`mt-2 p-3 rounded-xl text-xs font-medium flex items-center space-x-2 animate-in fade-in ${
+                    cnpjFeedback.type === 'success'
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {cnpjFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{cnpjFeedback.message}</span>
+                </div>
+              )}
+
+              {/* Badges de Dados Oficiais da Empresa Consultada */}
+              {type === 'PJ' && (registrationStatus || cnae) && (
+                <div className="mt-2.5 p-3 bg-slate-50 border border-slate-200/90 rounded-xl flex flex-wrap items-center gap-2 text-xs">
+                  {registrationStatus && (
+                    <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Situação:</span>
+                      <span className={`font-bold ${
+                        registrationStatus.toLowerCase().includes('ativa') ? 'text-emerald-600' : 'text-amber-600'
+                      }`}>
+                        {registrationStatus}
+                      </span>
+                    </div>
+                  )}
+
+                  {cnae && (
+                    <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 max-w-full truncate">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">CNAE Principal:</span>
+                      <span className="font-semibold text-slate-800 truncate" title={cnae}>
+                        {cnae}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {type === 'PJ' && (

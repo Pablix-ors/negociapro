@@ -10,11 +10,32 @@ import MasterModeBanner from '@/components/master/MasterModeBanner';
 
 import { useAuth } from '@/context/AuthContext';
 import { Ban, ShieldAlert, LogOut, MessageSquare } from 'lucide-react';
-
 function DashboardContent({ children }: { children: React.ReactNode }) {
-  const { company, user, logout } = useAuth();
+  const { company, user, isLoading, logout } = useAuth();
   const isMasterSession = typeof window !== 'undefined' && !!localStorage.getItem('negociapro_master_impersonated');
   const isBlocked = (company?.status === 'BLOQUEADO' || company?.status === 'INATIVO');
+
+  // Redirecionar para tela de login se não estiver logado
+  React.useEffect(() => {
+    if (!isLoading && !user && !isMasterSession) {
+      window.location.href = '/login';
+    }
+  }, [isLoading, user, isMasterSession]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-slate-950 text-white items-center justify-center">
+        <div className="flex flex-col items-center space-y-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-slate-400 font-medium">Carregando sistema comercial...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user && !isMasterSession) {
+    return null;
+  }
 
   // Se a empresa estiver BLOQUEADA e NÃO for uma auditoria direta do Master pelo MasterModeBanner
   if (isBlocked && !isMasterSession) {

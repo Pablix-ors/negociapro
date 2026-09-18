@@ -9,7 +9,7 @@ interface AuthContextType {
   company: Company | null;
   role: 'ADMIN' | 'GERENTE' | 'VENDEDOR';
   isLoading: boolean;
-  login: (email: string, pass: string) => Promise<boolean>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; message?: string }>;
   signUp: (email: string, pass: string, companyName: string, fullName: string) => Promise<{ success: boolean; message?: string }>;
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>;
   updateUserPassword: (newPass: string) => Promise<{ success: boolean; message?: string }>;
@@ -72,12 +72,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           setCompany(parsedComp);
         } catch {
-          setUser(DEMO_USER);
-          setCompany(DEMO_COMPANY);
+          setUser(null);
+          setCompany(null);
         }
       } else {
-        setUser(DEMO_USER);
-        setCompany(DEMO_COMPANY);
+        setUser(null);
+        setCompany(null);
       }
       setIsLoading(false);
     };
@@ -87,53 +87,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('storage', syncAuth);
   }, []);
 
-  const login = async (email: string): Promise<boolean> => {
+  const login = async (email: string, pass: string): Promise<{ success: boolean; message?: string }> => {
     setIsLoading(true);
-    // Se for o e-mail de teste de demonstração, usa DEMO_USER
-    if (!email || email === 'admin@negociapro.com.br') {
-      setUser(DEMO_USER);
-      setCompany(DEMO_COMPANY);
-      localStorage.setItem('negociapro_user', JSON.stringify(DEMO_USER));
-      localStorage.setItem('negociapro_company', JSON.stringify(DEMO_COMPANY));
-    } else {
-      // Verificar se o usuário já foi cadastrado na lista da equipe/empresa
-      let matchedProfile: Profile | null = null;
-      try {
-        const rawUsers = localStorage.getItem('negociapro_users_list');
-        if (rawUsers) {
-          const list: Profile[] = JSON.parse(rawUsers);
-          matchedProfile = list.find(u => u.email.toLowerCase() === email.trim().toLowerCase()) || null;
-        }
-      } catch {}
 
-      const currentCompanyStr = localStorage.getItem('negociapro_company');
-      let currentCompany: Company = DEMO_COMPANY;
-      if (currentCompanyStr) {
-        try { currentCompany = JSON.parse(currentCompanyStr); } catch {}
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+
+      // Chamada à rota segura de autenticação
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password: pass }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setIsLoading(false);
+        return { success: false, message: data.message || 'Credenciais inválidas.' };
       }
 
-      if (matchedProfile) {
-        // Usuário membro da equipe logando com seu perfil e cargo definido
-        setUser(matchedProfile);
-        setCompany(currentCompany);
-        localStorage.setItem('negociapro_user', JSON.stringify(matchedProfile));
-      } else {
-        // Conta nova independente: cria perfil novo
-        const newUserProfile: Profile = {
-          id: `usr-${Date.now()}`,
-          company_id: currentCompany.id,
-          name: email.split('@')[0],
-          email: email.trim().toLowerCase(),
-          role: 'ADMIN',
-          active: true,
-        };
-        setUser(newUserProfile);
-        setCompany(currentCompany);
-        localStorage.setItem('negociapro_user', JSON.stringify(newUserProfile));
-      }
+      const loggedUser: Profile = data.user;
+      const loggedCompany: Company = data.company || DEMO_COMPANY;
+
+      setUser(loggedUser);
+      setCompany(loggedCompany);
+      localStorage.setItem('negociapro_user', JSON.stringify(loggedUser));
+      localStorage.setItem('negociapro_company', JSON.stringify(loggedCompany));
+
+      setIsLoading(false);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Erro no login:', err);
+      setIsLoading(false);
+      return { success: false, message: err?.message || 'Falha ao conectar com o servidor.' };
     }
-    setIsLoading(false);
-    return true;
   };
 
   const signUp = async (email: string, pass: string, companyName: string, fullName: string): Promise<{ success: boolean; message?: string }> => {

@@ -240,14 +240,39 @@ export default function MasterEstabelecimentosPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Novo Estabelecimento</span>
-        </button>
+        <div className="flex items-center space-x-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              const demoCompany = {
+                id: 'a0000000-0000-0000-0000-000000000001',
+                name: 'NegociaPro Distribuidora Comercial LTDA',
+                trade_name: 'NegociaPro Demonstração',
+                cnpj: '12.345.678/0001-90',
+                email: 'demo@negociapro.com.br',
+                city: 'São Paulo',
+                state: 'SP',
+                status: 'ATIVO' as const,
+              };
+              enterCompany(demoCompany, 'Acesso de Demonstração pelo Painel Master');
+              window.location.href = '/dashboard';
+            }}
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+            title="Acessar ambiente de teste e demonstração comercial"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Acessar Demonstração</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Estabelecimento</span>
+          </button>
+        </div>
       </div>
 
       {/* Barra de Pesquisa e Filtros */}

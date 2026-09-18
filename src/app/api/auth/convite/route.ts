@@ -1,15 +1,97 @@
 import { NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/resend';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+function getAdminClient() {
+  return createClient(supabaseUrl, supabaseServiceKey);
+}
 
 export async function POST(request: Request) {
   try {
-    const { name, email, role, tempPassword, companyName } = await request.json();
+    const { name, email, phone, role, tempPassword, companyId, companyName } = await request.json();
 
     if (!email || !email.includes('@')) {
       return NextResponse.json(
         { success: false, message: 'Informe um e-mail válido.' },
         { status: 400 }
       );
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = (tempPassword && tempPassword.trim().length >= 6) ? tempPassword.trim() : '123456';
+    const userRole = role || 'VENDEDOR';
+    const cleanName = name?.trim() || 'Profissional';
+
+    // 1. Provisionar o usuário no Supabase Auth e na tabela profiles
+    if (supabaseUrl && supabaseServiceKey) {
+      try {
+        const supabase = getAdminClient();
+
+        // Verificar se o usuário já existe no Supabase Auth
+        const { data: userList } = await supabase.auth.admin.listUsers();
+        const existingAuthUser = userList?.users?.find(
+          (u) => u.email?.toLowerCase() === cleanEmail
+        );
+
+        let authUserId = existingAuthUser?.id;
+
+        if (!existingAuthUser) {
+          // Criar novo usuário no Supabase Auth com e-mail já confirmado
+          const { data: createdUser, error: createAuthErr } = await supabase.auth.admin.createUser({
+            email: cleanEmail,
+            password: cleanPassword,
+            email_confirm: true,
+            user_metadata: {
+              full_name: cleanName,
+              company_id: companyId || null,
+              company_name: companyName || null,
+              role: userRole,
+            },
+          });
+
+          if (createAuthErr) {
+            console.error('Erro ao criar usuário no Supabase Auth:', createAuthErr);
+          } else if (createdUser?.user) {
+            authUserId = createdUser.user.id;
+          }
+        } else {
+          // Atualizar senha e metadados caso já exista
+          await supabase.auth.admin.updateUserById(existingAuthUser.id, {
+            password: cleanPassword,
+            email_confirm: true,
+            user_metadata: {
+              ...existingAuthUser.user_metadata,
+              full_name: cleanName,
+              company_id: companyId || existingAuthUser.user_metadata?.company_id,
+              company_name: companyName || existingAuthUser.user_metadata?.company_name,
+              role: userRole,
+            },
+          });
+        }
+
+        // 2. Criar ou atualizar perfil na tabela profiles vinculando à empresa do estabelecimento
+        if (authUserId && companyId) {
+          const { error: profileErr } = await supabase.from('profiles').upsert({
+            id: authUserId,
+            company_id: companyId,
+            name: cleanName,
+            email: cleanEmail,
+            role: userRole,
+            phone: phone || null,
+            active: true,
+            updated_at: new Date().toISOString(),
+          });
+
+          if (profileErr) {
+            console.error('Erro ao salvar na tabela profiles:', profileErr);
+          }
+        }
+      } catch (authProvisionErr) {
+        console.error('Erro geral no provisionamento Supabase:', authProvisionErr);
+      }
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
