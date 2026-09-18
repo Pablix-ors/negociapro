@@ -47,7 +47,7 @@ function LoginContent() {
     const result = await login(email, password);
 
     if (result.success) {
-      router.push('/dashboard');
+      window.location.href = '/dashboard';
     } else {
       setError(result.message || 'E-mail ou senha incorretos.');
       if (result.needsEmailConfirmation) {
