@@ -95,14 +95,16 @@ export default function DashboardPage() {
   // Ranking: Top Clientes Mais Valiosos
   const topCustomers = React.useMemo(() => {
     return [...safeCustomers]
+      .filter((c) => c && typeof c === 'object')
       .sort((a, b) => (Number(b.total_purchased) || 0) - (Number(a.total_purchased) || 0))
       .slice(0, 5);
   }, [safeCustomers]);
 
-  // Ranking: Produtos Mais Vendidos
+  // Ranking: Produtos Mais Vendidos / Destaque
   const topProducts = React.useMemo(() => {
     return [...safeProducts]
-      .sort((a, b) => (Number(b.selling_price) || 0) * 10 - (Number(a.selling_price) || 0) * 10)
+      .filter((p) => p && typeof p === 'object' && p.id)
+      .sort((a, b) => (Number(b.selling_price) || 0) - (Number(a.selling_price) || 0))
       .slice(0, 5);
   }, [safeProducts]);
 
@@ -448,10 +450,10 @@ export default function DashboardPage() {
               </div>
             ) : (
               topProducts.map((prod) => (
-                <div key={prod.id} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
+                <div key={prod.id || Math.random()} className="py-3 flex items-center justify-between hover:bg-slate-50/60 px-2 rounded-xl transition-colors">
                   <div className="flex items-center space-x-3">
                     {prod.image_url ? (
-                      <img src={prod.image_url} alt={prod.name} className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
+                      <img src={prod.image_url} alt={prod.name || 'Produto'} className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0" />
                     ) : (
                       <div className="p-2 bg-slate-100 rounded-xl text-slate-600 shrink-0">
                         <Package className="w-4 h-4" />
@@ -459,10 +461,10 @@ export default function DashboardPage() {
                     )}
                     <div className="truncate">
                       <span className="text-xs font-bold text-slate-800 block truncate max-w-xs">
-                        {prod.name}
+                        {prod.name || 'Produto sem nome'}
                       </span>
                       <span className="text-[11px] text-slate-400">
-                        SKU: {prod.sku || '-'} • Estoque: {prod.current_stock} {prod.unit}
+                        SKU: {prod.sku || '-'} • Estoque: {prod.current_stock ?? 0} {prod.unit || 'UN'}
                       </span>
                     </div>
                   </div>
@@ -471,7 +473,7 @@ export default function DashboardPage() {
                       {formatCurrency(prod.selling_price)}
                     </span>
                     <span className="text-[10px] text-emerald-600 font-medium">
-                      {prod.commission_type === 'PERCENTAGE' ? `${prod.commission_value}% comissão` : prod.commission_type === 'FIXED' ? `${formatCurrency(prod.commission_value)}/un` : 'Sem comissão'}
+                      {prod.commission_type === 'PERCENTAGE' ? `${prod.commission_value || 0}% comissão` : prod.commission_type === 'FIXED' ? `${formatCurrency(prod.commission_value)}/un` : 'Sem comissão'}
                     </span>
                   </div>
                 </div>

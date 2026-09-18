@@ -119,6 +119,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const tenantKey = company?.id ? `_tenant_${company.id}` : '';
   const isDemoCompany = !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company';
 
+  // Helper seguro para localStorage (evita travar a aplicação caso atinja a cota do navegador de 5MB)
+  const safeSetItem = (key: string, value: string) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`[Storage] Aviso: Não foi possível salvar dados em cache para "${key}":`, err);
+    }
+  };
+
   // Carregar dados de acordo com a empresa atual (persistência segura por tenant)
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -126,46 +136,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const key = tenantKey;
     const isDemo = isDemoCompany;
 
-    const savedCust = localStorage.getItem(`negociapro_customers${key}`);
-    const savedProd = localStorage.getItem(`negociapro_products${key}`);
-    const savedSales = localStorage.getItem(`negociapro_sales${key}`);
-    const savedProfs = localStorage.getItem(`negociapro_professionals${key}`);
-    const savedComms = localStorage.getItem(`negociapro_commissions${key}`);
-    const savedHist = localStorage.getItem(`negociapro_history${key}`);
-    const savedNotifs = localStorage.getItem(`negociapro_notifications${key}`);
-
-    if (savedCust) {
-      try { setCustomers(JSON.parse(savedCust)); } catch {}
-    } else {
-      // Se for a empresa demo original e não tem dados salvos, usa demo. Se for empresa nova, começa zerada.
+    try {
+      const savedCust = localStorage.getItem(`negociapro_customers${key}`);
+      if (savedCust) {
+        setCustomers(JSON.parse(savedCust));
+      } else {
+        setCustomers(isDemo ? DEMO_CUSTOMERS : []);
+      }
+    } catch {
       setCustomers(isDemo ? DEMO_CUSTOMERS : []);
     }
 
-    if (savedProd) {
-      try { setProducts(JSON.parse(savedProd)); } catch {}
-    } else {
+    try {
+      const savedProd = localStorage.getItem(`negociapro_products${key}`);
+      if (savedProd) {
+        setProducts(JSON.parse(savedProd));
+      } else {
+        setProducts(isDemo ? DEMO_PRODUCTS : []);
+      }
+    } catch {
       setProducts(isDemo ? DEMO_PRODUCTS : []);
     }
 
     // Se a empresa possui ID real (como Ração mais barato ltda), carregar produtos reais do Supabase / API
     if (company?.id && !isDemo) {
       fetch(`/api/products?company_id=${company.id}`)
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
         .then((data) => {
-          if (data.success && data.products && data.products.length > 0) {
+          if (data && data.success && Array.isArray(data.products) && data.products.length > 0) {
             setProducts(data.products);
-            localStorage.setItem(`negociapro_products${key}`, JSON.stringify(data.products));
+            safeSetItem(`negociapro_products${key}`, JSON.stringify(data.products));
           }
         })
         .catch(() => {
           // Fallback caso esteja offline: verificar se há arquivo estático disponível para esta empresa
           if (company.name?.toLowerCase().includes('ração mais barato') || company.id === '2bcee844-9475-4175-ae47-e0f6f53dbb09') {
             fetch('/racao_mais_barato_products.json')
-              .then((r) => r.json())
+              .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+              })
               .then((cachedList) => {
                 if (Array.isArray(cachedList) && cachedList.length > 0) {
                   setProducts(cachedList);
-                  localStorage.setItem(`negociapro_products${key}`, JSON.stringify(cachedList));
+                  safeSetItem(`negociapro_products${key}`, JSON.stringify(cachedList));
                 }
               })
               .catch(() => {});
@@ -173,51 +190,71 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
     }
 
-    if (savedSales) {
-      try { setSales(JSON.parse(savedSales)); } catch {}
-    } else {
+    try {
+      const savedSales = localStorage.getItem(`negociapro_sales${key}`);
+      if (savedSales) {
+        setSales(JSON.parse(savedSales));
+      } else {
+        setSales(isDemo ? DEMO_SALES : []);
+      }
+    } catch {
       setSales(isDemo ? DEMO_SALES : []);
     }
 
-    if (savedProfs) {
-      try {
+    try {
+      const savedProfs = localStorage.getItem(`negociapro_professionals${key}`);
+      if (savedProfs) {
         const parsedProfs: Professional[] = JSON.parse(savedProfs);
-        // Se a empresa não for demo, expurgar profissionais demo caso tenham sido herdados no passado
         if (!isDemo) {
           const sanitized = parsedProfs.filter(p => p.company_id !== 'a0000000-0000-0000-0000-000000000001' && p.id !== 'prof-01' && p.id !== 'prof-02');
           setProfessionals(sanitized);
         } else {
           setProfessionals(parsedProfs);
         }
-      } catch {
+      } else {
         setProfessionals(isDemo ? DEMO_PROFESSIONALS : []);
       }
-    } else {
+    } catch {
       setProfessionals(isDemo ? DEMO_PROFESSIONALS : []);
     }
 
-    if (savedComms) {
-      try { setCommissions(JSON.parse(savedComms)); } catch {}
-    } else {
+    try {
+      const savedComms = localStorage.getItem(`negociapro_commissions${key}`);
+      if (savedComms) {
+        setCommissions(JSON.parse(savedComms));
+      } else {
+        setCommissions(isDemo ? DEMO_COMMISSION_RECORDS : []);
+      }
+    } catch {
       setCommissions(isDemo ? DEMO_COMMISSION_RECORDS : []);
     }
 
-    if (savedHist) {
-      try { setPriceHistoryMap(JSON.parse(savedHist)); } catch {}
-    } else {
+    try {
+      const savedHist = localStorage.getItem(`negociapro_history${key}`);
+      if (savedHist) {
+        setPriceHistoryMap(JSON.parse(savedHist));
+      } else {
+        setPriceHistoryMap(isDemo ? DEMO_PRICE_HISTORY_MAP : {});
+      }
+    } catch {
       setPriceHistoryMap(isDemo ? DEMO_PRICE_HISTORY_MAP : {});
     }
 
-    if (savedNotifs) {
-      try { setNotifications(JSON.parse(savedNotifs)); } catch {}
-    } else {
+    try {
+      const savedNotifs = localStorage.getItem(`negociapro_notifications${key}`);
+      if (savedNotifs) {
+        setNotifications(JSON.parse(savedNotifs));
+      } else {
+        setNotifications(isDemo ? DEMO_NOTIFICATIONS : []);
+      }
+    } catch {
       setNotifications(isDemo ? DEMO_NOTIFICATIONS : []);
     }
   }, [tenantKey, isDemoCompany, company?.id]);
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
-    localStorage.setItem(`negociapro_notifications${tenantKey}`, JSON.stringify(data));
+    safeSetItem(`negociapro_notifications${tenantKey}`, JSON.stringify(data));
   };
 
   const markNotificationAsRead = (id: string) => {
@@ -243,32 +280,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const saveCust = (data: Customer[]) => {
     setCustomers(data);
-    localStorage.setItem(`negociapro_customers${tenantKey}`, JSON.stringify(data));
+    safeSetItem(`negociapro_customers${tenantKey}`, JSON.stringify(data));
   };
 
   const saveProd = (data: Product[]) => {
     setProducts(data);
-    localStorage.setItem(`negociapro_products${tenantKey}`, JSON.stringify(data));
+    safeSetItem(`negociapro_products${tenantKey}`, JSON.stringify(data));
   };
 
   const saveSalesState = (data: Sale[]) => {
     setSales(data);
-    localStorage.setItem(`negociapro_sales${tenantKey}`, JSON.stringify(data));
+    safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(data));
   };
 
   const saveProfsState = (data: Professional[]) => {
     setProfessionals(data);
-    localStorage.setItem(`negociapro_professionals${tenantKey}`, JSON.stringify(data));
+    safeSetItem(`negociapro_professionals${tenantKey}`, JSON.stringify(data));
   };
 
   const saveCommsState = (data: CommissionRecord[]) => {
     setCommissions(data);
-    localStorage.setItem(`negociapro_commissions${tenantKey}`, JSON.stringify(data));
+    safeSetItem(`negociapro_commissions${tenantKey}`, JSON.stringify(data));
   };
 
   const saveHistoryState = (map: Record<string, PriceHistorySummary>) => {
     setPriceHistoryMap(map);
-    localStorage.setItem(`negociapro_history${tenantKey}`, JSON.stringify(map));
+    safeSetItem(`negociapro_history${tenantKey}`, JSON.stringify(map));
   };
 
   const getPriceHistory = (customerId: string, productId: string): PriceHistorySummary => {
