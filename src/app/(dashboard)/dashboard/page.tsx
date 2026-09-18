@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
@@ -20,18 +22,18 @@ import {
   Clock,
   CheckCircle2,
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
+import nextDynamic from 'next/dynamic';
 
 // Carregamento dinâmico do Recharts para evitar falhas de hidratação e SSR no App Router do Next.js
-const AreaChart = dynamic(() => import('recharts').then((mod) => mod.AreaChart), { ssr: false });
-const Area = dynamic(() => import('recharts').then((mod) => mod.Area), { ssr: false });
-const XAxis = dynamic(() => import('recharts').then((mod) => mod.XAxis), { ssr: false });
-const YAxis = dynamic(() => import('recharts').then((mod) => mod.YAxis), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then((mod) => mod.Tooltip), { ssr: false });
-const CartesianGrid = dynamic(() => import('recharts').then((mod) => mod.CartesianGrid), { ssr: false });
-const BarChart = dynamic(() => import('recharts').then((mod) => mod.BarChart), { ssr: false });
-const Bar = dynamic(() => import('recharts').then((mod) => mod.Bar), { ssr: false });
-const ResponsiveContainer = dynamic(() => import('recharts').then((mod) => mod.ResponsiveContainer), { ssr: false });
+const AreaChart = nextDynamic(() => import('recharts').then((mod) => mod.AreaChart), { ssr: false });
+const Area = nextDynamic(() => import('recharts').then((mod) => mod.Area), { ssr: false });
+const XAxis = nextDynamic(() => import('recharts').then((mod) => mod.XAxis), { ssr: false });
+const YAxis = nextDynamic(() => import('recharts').then((mod) => mod.YAxis), { ssr: false });
+const Tooltip = nextDynamic(() => import('recharts').then((mod) => mod.Tooltip), { ssr: false });
+const CartesianGrid = nextDynamic(() => import('recharts').then((mod) => mod.CartesianGrid), { ssr: false });
+const BarChart = nextDynamic(() => import('recharts').then((mod) => mod.BarChart), { ssr: false });
+const Bar = nextDynamic(() => import('recharts').then((mod) => mod.Bar), { ssr: false });
+const ResponsiveContainer = nextDynamic(() => import('recharts').then((mod) => mod.ResponsiveContainer), { ssr: false });
 
 export default function DashboardPage() {
   const { sales = [], customers = [], products = [], professionals = [], commissions = [] } = useData();
