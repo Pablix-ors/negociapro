@@ -15,8 +15,15 @@ import { useRouter } from 'next/navigation';
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { company, user, isLoading, logout } = useAuth();
-  const isMasterSession = typeof window !== 'undefined' && !!localStorage.getItem('negociapro_master_impersonated');
-  const isBlocked = (company?.status === 'BLOQUEADO' || company?.status === 'INATIVO');
+  const [isMasterSession, setIsMasterSession] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsMasterSession(!!localStorage.getItem('negociapro_master_impersonated'));
+    }
+  }, []);
+
+  const isBlocked = Boolean(company && (company.status === 'BLOQUEADO' || company.status === 'INATIVO'));
 
   // Redirecionar para tela de login se não estiver logado
   React.useEffect(() => {

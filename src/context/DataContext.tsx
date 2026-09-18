@@ -36,6 +36,7 @@ interface DataContextType {
   getPriceHistory: (customerId: string, productId: string) => PriceHistorySummary;
   addCustomer: (customer: Omit<Customer, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Customer;
   updateCustomer: (id: string, customer: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => void;
   addProduct: (product: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Product;
   updateProduct: (id: string, product: Partial<Product>) => void;
   adjustStock: (productId: string, quantityChange: number, reason: string) => void;
@@ -120,6 +121,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Carregar dados de acordo com a empresa atual (persistência segura por tenant)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const key = tenantKey;
     const isDemo = isDemoCompany;
 
@@ -210,7 +213,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } else {
       setNotifications(isDemo ? DEMO_NOTIFICATIONS : []);
     }
-  }, [user, company?.id]);
+  }, [tenantKey, isDemoCompany, company?.id]);
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
@@ -304,6 +307,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const updateCustomer = (id: string, updatedFields: Partial<Customer>) => {
     const updated = customers.map(c => (c.id === id ? { ...c, ...updatedFields, updated_at: new Date().toISOString() } : c));
+    saveCust(updated);
+  };
+
+  const deleteCustomer = (id: string) => {
+    const updated = customers.filter(c => c.id !== id);
     saveCust(updated);
   };
 
@@ -656,6 +664,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         getPriceHistory,
         addCustomer,
         updateCustomer,
+        deleteCustomer,
         addProduct,
         updateProduct,
         adjustStock,

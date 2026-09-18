@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate, maskCPF, maskCNPJ, maskPhone, maskCEP } from '@/lib/formatters';
 import { validateCNPJ, validateCPF, validateEmail } from '@/lib/validators';
 import {
@@ -25,17 +26,22 @@ import {
   AlertCircle,
   X,
   Check,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function ClienteDetalhesPage() {
   const params = useParams();
   const router = useRouter();
-  const { customers, sales, updateCustomer } = useData();
+  const { customers, sales, updateCustomer, deleteCustomer } = useData();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
 
   const customerId = params?.id as string;
   const customer = customers.find((c) => c.id === customerId);
 
   const [activeTab, setActiveTab] = useState<'resumo' | 'compras' | 'produtos' | 'negociacoes'>('resumo');
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Estados do Modal de Edição
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -236,11 +242,23 @@ export default function ClienteDetalhesPage() {
           <button
             type="button"
             onClick={openEditModal}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
             <Edit2 className="w-3.5 h-3.5 text-slate-500" />
-            <span>Editar Cliente</span>
+            <span>Editar</span>
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              title="Excluir este cliente da carteira"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Excluir</span>
+            </button>
+          )}
 
           <Link
             href={`/vendas/nova?cliente=${customer.id}`}
@@ -674,19 +692,63 @@ export default function ClienteDetalhesPage() {
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                  className="px-4 py-2 rounded-xl border border-slate-200 font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center space-x-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-xs"
+                  className="inline-flex items-center space-x-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-xs cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
                   <span>Salvar Alterações</span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      {isDeleteModalOpen && customer && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200/90 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900">Excluir Cliente?</h3>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  Tem certeza que deseja remover <strong>{customer.name}</strong> da carteira comercial deste estabelecimento?
+                </p>
+                <div className="mt-2.5 p-2 bg-slate-50 rounded-lg text-[11px] text-slate-600 border border-slate-100 font-mono">
+                  {customer.type} • {customer.document || 'Sem documento'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCustomer(customer.id);
+                  setIsDeleteModalOpen(false);
+                  router.push('/clientes');
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/20 active:scale-95 cursor-pointer flex items-center space-x-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Sim, Excluir</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -33,59 +33,78 @@ import {
 } from 'recharts';
 
 export default function DashboardPage() {
-  const { sales, customers, products, professionals, commissions } = useData();
+  const { sales = [], customers = [], products = [], professionals = [], commissions = [] } = useData();
   const [period, setPeriod] = useState<'7d' | '30d' | 'mes' | 'ano'>('30d');
+  const [isMounted, setIsMounted] = useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const safeSales = Array.isArray(sales) ? sales.filter(Boolean) : [];
+  const safeCustomers = Array.isArray(customers) ? customers.filter(Boolean) : [];
+  const safeProducts = Array.isArray(products) ? products.filter(Boolean) : [];
+  const safeProfessionals = Array.isArray(professionals) ? professionals.filter(Boolean) : [];
+  const safeCommissions = Array.isArray(commissions) ? commissions.filter(Boolean) : [];
 
   // Cálculos de métricas
-  const completedSales = sales.filter((s) => s.status === 'COMPLETED');
-  const totalRevenue = completedSales.reduce((acc, s) => acc + s.total, 0);
+  const completedSales = safeSales.filter((s) => s.status === 'COMPLETED');
+  const totalRevenue = completedSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
   const completedSalesCount = completedSales.length;
   const avgTicket = completedSalesCount > 0 ? totalRevenue / completedSalesCount : 0;
-  const activeCustomersCount = customers.filter((c) => c.active).length;
+  const activeCustomersCount = safeCustomers.filter((c) => c.active).length;
 
   // Métricas de Comissões
-  const pendingCommissionsTotal = commissions
+  const pendingCommissionsTotal = safeCommissions
     .filter((c) => c.status === 'PENDENTE')
-    .reduce((acc, c) => acc + c.commission_amount, 0);
-  const paidCommissionsTotal = commissions
+    .reduce((acc, c) => acc + (Number(c.commission_amount) || 0), 0);
+  const paidCommissionsTotal = safeCommissions
     .filter((c) => c.status === 'PAGA')
-    .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
+    .reduce((acc, c) => acc + (Number(c.paid_amount) || Number(c.commission_amount) || 0), 0);
 
   // Dados para Gráfico de Vendas
-  const chartData = sales.length > 0
-    ? [
-        { name: '10/09', total: sales.length > 2 ? 5475 : Math.round(totalRevenue * 0.3) },
-        { name: '11/09', total: sales.length > 2 ? 2100 : Math.round(totalRevenue * 0.2) },
-        { name: '12/09', total: sales.length > 2 ? 1316 : Math.round(totalRevenue * 0.1) },
-        { name: '13/09', total: sales.length > 2 ? 4200 : Math.round(totalRevenue * 0.4) },
-        { name: '14/09', total: sales.length > 2 ? 3890 : Math.round(totalRevenue * 0.2) },
-        { name: '15/09', total: totalRevenue > 0 ? totalRevenue : 0 },
-      ]
-    : [
-        { name: 'Seg', total: 0 },
-        { name: 'Ter', total: 0 },
-        { name: 'Qua', total: 0 },
-        { name: 'Qui', total: 0 },
-        { name: 'Sex', total: 0 },
-        { name: 'Hoje', total: 0 },
-      ];
+  const chartData = React.useMemo(() => {
+    return safeSales.length > 0
+      ? [
+          { name: '10/09', total: safeSales.length > 2 ? 5475 : Math.round(totalRevenue * 0.3) },
+          { name: '11/09', total: safeSales.length > 2 ? 2100 : Math.round(totalRevenue * 0.2) },
+          { name: '12/09', total: safeSales.length > 2 ? 1316 : Math.round(totalRevenue * 0.1) },
+          { name: '13/09', total: safeSales.length > 2 ? 4200 : Math.round(totalRevenue * 0.4) },
+          { name: '14/09', total: safeSales.length > 2 ? 3890 : Math.round(totalRevenue * 0.2) },
+          { name: '15/09', total: totalRevenue > 0 ? totalRevenue : 0 },
+        ]
+      : [
+          { name: 'Seg', total: 0 },
+          { name: 'Ter', total: 0 },
+          { name: 'Qua', total: 0 },
+          { name: 'Qui', total: 0 },
+          { name: 'Sex', total: 0 },
+          { name: 'Hoje', total: 0 },
+        ];
+  }, [safeSales.length, totalRevenue]);
 
   // Gráfico: Vendas por Profissional
-  const professionalChartData = professionals.map((p) => ({
-    name: (p.name || 'Profissional').split(' ')[0],
-    total: p.total_sales || 0,
-    comissao: p.commission_earned || 0,
-  }));
+  const professionalChartData = React.useMemo(() => {
+    return safeProfessionals.map((p) => ({
+      name: (p.name || 'Profissional').split(' ')[0],
+      total: Number(p.total_sales) || 0,
+      comissao: Number(p.commission_earned) || 0,
+    }));
+  }, [safeProfessionals]);
 
   // Ranking: Top Clientes Mais Valiosos
-  const topCustomers = [...customers]
-    .sort((a, b) => (b.total_purchased || 0) - (a.total_purchased || 0))
-    .slice(0, 5);
+  const topCustomers = React.useMemo(() => {
+    return [...safeCustomers]
+      .sort((a, b) => (Number(b.total_purchased) || 0) - (Number(a.total_purchased) || 0))
+      .slice(0, 5);
+  }, [safeCustomers]);
 
   // Ranking: Produtos Mais Vendidos
-  const topProducts = [...products]
-    .sort((a, b) => b.selling_price * 10 - a.selling_price * 10)
-    .slice(0, 5);
+  const topProducts = React.useMemo(() => {
+    return [...safeProducts]
+      .sort((a, b) => (Number(b.selling_price) || 0) * 10 - (Number(a.selling_price) || 0) * 10)
+      .slice(0, 5);
+  }, [safeProducts]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -280,36 +299,42 @@ export default function DashboardPage() {
           </div>
 
           <div className="h-64 mt-4 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <YAxis
-                  stroke="#94a3b8"
-                  fontSize={11}
-                  tickLine={false}
-                  tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  formatter={(value: any) => [formatCurrency(Number(value)), 'Faturamento']}
-                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#2563eb"
-                  strokeWidth={3}
-                  fillOpacity={1}
-                  fill="url(#colorRevenue)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {!isMounted ? (
+              <div className="h-full w-full bg-slate-50/80 animate-pulse rounded-xl flex items-center justify-center text-xs text-slate-400 font-medium border border-slate-100">
+                Carregando dados estatísticos...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickLine={false}
+                    tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    formatter={(value: any) => [formatCurrency(Number(value)), 'Faturamento']}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#2563eb"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorRevenue)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -326,7 +351,11 @@ export default function DashboardPage() {
           </div>
 
           <div className="h-64 mt-4 w-full">
-            {professionalChartData.length === 0 ? (
+            {!isMounted ? (
+              <div className="h-full w-full bg-slate-50/80 animate-pulse rounded-xl flex items-center justify-center text-xs text-slate-400 font-medium border border-slate-100">
+                Carregando dados da equipe...
+              </div>
+            ) : professionalChartData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-slate-400">
                 Nenhum profissional com vendas registradas ainda.
               </div>

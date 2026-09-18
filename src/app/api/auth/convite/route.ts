@@ -150,10 +150,8 @@ export async function POST(request: Request) {
       },
     });
 
-    let inviteUrl = `${appUrl}/auth/confirm?token_hash=${inviteLinkData?.properties?.hashed_token || ''}&type=invite`;
-    if (inviteLinkData?.properties?.action_link) {
-      inviteUrl = inviteLinkData.properties.action_link;
-    }
+    const hashedToken = inviteLinkData?.properties?.hashed_token || '';
+    const inviteUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=invite`;
 
     // 6. Enviar e-mail de convite com link oficial via Brevo SMTP
     const emailHtml = getInviteProfessionalTemplate({

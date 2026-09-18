@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, maskCPF, maskPhone } from '@/lib/formatters';
@@ -23,16 +25,31 @@ import {
   Check,
   Key,
   ShieldCheck,
+  ShieldAlert,
+  ArrowLeft,
   Lock,
   Eye,
   EyeOff,
   Copy,
   Share2,
   MessageCircle,
+  Building2,
 } from 'lucide-react';
 
 export default function ProfissionaisPage() {
+  const router = useRouter();
   const { professionals, sales, commissions, addProfessional, updateProfessional, deactivateProfessional } = useData();
+  const { user: currentUser, company: currentCompany, isLoading } = useAuth();
+  const isAllowed = currentUser?.role === 'ADMIN' || currentUser?.role === 'GERENTE';
+
+  useEffect(() => {
+    if (!isLoading && currentUser && !isAllowed) {
+      const timer = setTimeout(() => {
+        router.replace('/dashboard');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, currentUser, isAllowed, router]);
 
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -60,6 +77,31 @@ export default function ProfissionaisPage() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  if (!isAllowed) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-4 animate-in fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          Acesso Restrito à Supervisão & Gestão
+        </h2>
+        <p className="text-xs text-slate-600 max-w-md mx-auto">
+          Você está conectado com o perfil <strong className="text-blue-600 font-bold">{currentUser?.role || 'VENDEDOR'}</strong>. Apenas gerentes comerciais e administradores possuem permissão para gerenciar profissionais da equipe.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar ao Dashboard</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   // Filtragem
   const filteredProfessionals = professionals.filter((p) => {
     const matchesQuery =
@@ -76,7 +118,6 @@ export default function ProfissionaisPage() {
     return matchesQuery && matchesStatus;
   });
 
-  const { user: currentUser, company: currentCompany } = useAuth();
   const [enableLoginAccess, setEnableLoginAccess] = useState(false);
   const [loginRole, setLoginRole] = useState<UserRole>('VENDEDOR');
   const [tempPassword, setTempPassword] = useState('123456');
@@ -119,22 +160,24 @@ export default function ProfissionaisPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
     if (!name.trim()) {
       setError('O nome do profissional é obrigatório.');
       return;
     }
 
-    if (enableLoginAccess && !email.trim()) {
-      setError('Para liberar acesso ao sistema com login, o e-mail é obrigatório.');
-      return;
+    if (enableLoginAccess) {
+      if (!email || !email.trim()) {
+        setError('Para criar o login de acesso do profissional, é obrigatório preencher o campo E-mail.');
+        return;
+      }
+      if (!email.includes('@') || !email.includes('.')) {
+        setError('Por favor, informe um endereço de e-mail válido para o login.');
+        return;
+      }
     }
 
-    if (enableLoginAccess && tempPassword.length < 6) {
-      setError('A senha provisória deve ter pelo menos 6 caracteres.');
-      return;
-    }
-
-    setError(null);
     setIsSubmitting(true);
 
     try {
@@ -167,7 +210,8 @@ export default function ProfissionaisPage() {
 
           // Salvar também em lista local para consistência offline imediata
           try {
-            const rawUsers = localStorage.getItem('negociapro_users_list');
+            const tenantUsersKey = targetCompanyId ? `negociapro_users_list_tenant_${targetCompanyId}` : 'negociapro_users_list';
+            const rawUsers = localStorage.getItem(tenantUsersKey) || localStorage.getItem('negociapro_users_list');
             const currentUsersList: Profile[] = rawUsers ? JSON.parse(rawUsers) : [];
             const newUserProfile: Profile = {
               id: `usr-${Date.now()}`,
@@ -180,6 +224,7 @@ export default function ProfissionaisPage() {
             };
             const filtered = currentUsersList.filter(u => u.email.toLowerCase() !== email.trim().toLowerCase());
             filtered.push(newUserProfile);
+            localStorage.setItem(tenantUsersKey, JSON.stringify(filtered));
             localStorage.setItem('negociapro_users_list', JSON.stringify(filtered));
           } catch {}
 
@@ -611,14 +656,29 @@ export default function ProfissionaisPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">E-mail</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    E-mail {enableLoginAccess ? <span className="text-red-500 font-extrabold">* (Obrigatório para login)</span> : '(Opcional)'}
+                  </label>
                   <input
                     type="email"
+                    required={enableLoginAccess}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder="profissional@empresa.com.br"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-hidden focus:ring-2 ${
+                      enableLoginAccess && !email.trim()
+                        ? 'border-amber-400 focus:ring-amber-500 bg-amber-50/30'
+                        : 'border-slate-200 focus:ring-blue-500'
+                    }`}
                   />
+                  {enableLoginAccess && !email.trim() && (
+                    <p className="text-[11px] text-amber-600 font-medium mt-1">
+                      Preencha o e-mail acima para enviar o convite de acesso.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -655,7 +715,12 @@ export default function ProfissionaisPage() {
                   </label>
 
                   {enableLoginAccess && (
-                    <div className="pt-2 border-t border-blue-100/80 space-y-2">
+                    <div className="pt-2 border-t border-blue-100/80 space-y-3">
+                      <div className="p-2.5 bg-blue-100/70 border border-blue-200 rounded-xl flex items-center space-x-2 text-xs text-blue-900">
+                        <Building2 className="w-4 h-4 text-blue-700 shrink-0" />
+                        <span>Estabelecimento vinculado: <strong>{currentCompany?.trade_name || currentCompany?.name || 'NegociaPro (Demonstração)'}</strong></span>
+                      </div>
+
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Nível de Permissão
@@ -678,11 +743,18 @@ export default function ProfissionaisPage() {
                 </div>
               )}
 
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center space-x-2 text-xs text-red-700 font-semibold animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end space-x-2 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancelar
                 </button>

@@ -53,10 +53,8 @@ export async function POST(request: Request) {
       );
     }
 
-    let recoveryUrl = `${appUrl}/auth/confirm?token_hash=${linkData?.properties?.hashed_token || ''}&type=recovery`;
-    if (linkData?.properties?.action_link) {
-      recoveryUrl = linkData.properties.action_link;
-    }
+    const hashedToken = linkData?.properties?.hashed_token || '';
+    const recoveryUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=recovery`;
 
     // 3. Enviar e-mail de recuperação com link oficial via Brevo SMTP
     const emailHtml = getPasswordRecoveryTemplate({

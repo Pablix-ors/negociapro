@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { CommissionStatus } from '@/types/database';
 import {
@@ -31,12 +33,27 @@ import {
   Download,
   FileSpreadsheet,
   CheckCircle,
+  ShieldAlert,
+  ArrowLeft,
 } from 'lucide-react';
 
 type FinancialTab = 'overview' | 'commissions' | 'sales_cashflow';
 
 export default function FinanceiroPage() {
+  const router = useRouter();
   const { sales, commissions, professionals, customers, markCommissionAsPaid } = useData();
+  const { user, isLoading } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
+  // Redirecionamento se não for ADMIN
+  useEffect(() => {
+    if (!isLoading && user && !isAdmin) {
+      const timer = setTimeout(() => {
+        router.replace('/dashboard');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, user, isAdmin, router]);
 
   // Abas do Financeiro
   const [activeTab, setActiveTab] = useState<FinancialTab>('overview');
@@ -54,6 +71,31 @@ export default function FinanceiroPage() {
   const [targetCommissionId, setTargetCommissionId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState<number>(0);
   const [payNotes, setPayNotes] = useState<string>('');
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-4 animate-in fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          Acesso Restrito a Administradores
+        </h2>
+        <p className="text-xs text-slate-600 max-w-md mx-auto">
+          Você está conectado com o perfil <strong className="text-blue-600 font-bold">{user?.role || 'VENDEDOR'}</strong>. O módulo Financeiro, fluxo de caixa e gestão de pagamentos de comissão são de acesso exclusivo do administrador titular.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar ao Dashboard</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   // --- CÁLCULOS FINANCEIROS CONSOLIDADOS ---
   const completedSales = useMemo(() => {

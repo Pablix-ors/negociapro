@@ -26,7 +26,7 @@ const commercialNavigation = [
   { name: 'Vendas', href: '/vendas', icon: ShoppingCart },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Produtos', href: '/produtos', icon: Package },
-  { name: 'Profissionais', href: '/profissionais', icon: Award, adminOnly: true },
+  { name: 'Profissionais', href: '/profissionais', icon: Award, managerOrAdmin: true },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign, adminOnly: true },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
@@ -38,12 +38,15 @@ const configNavigation = [
 ];
 
 export default function Sidebar() {
-  const pathname = usePathname();
-  const { user } = useAuth();
+  const pathname = usePathname() || '';
+  const { user, company } = useAuth();
   const { impersonatedCompany } = useMaster();
 
-  const isOwnerOrAdmin = Boolean(impersonatedCompany) || user?.role === 'ADMIN' || user?.role === 'GERENTE';
+  const isAdmin = Boolean(impersonatedCompany) || user?.role === 'ADMIN';
+  const isOwnerOrAdmin = isAdmin || user?.role === 'GERENTE';
   const isProfessional = user?.role === 'VENDEDOR';
+
+  const activeCompanyName = impersonatedCompany?.trade_name || impersonatedCompany?.name || company?.trade_name || company?.name || 'Estabelecimento';
 
   return (
     <aside className="hidden lg:flex lg:flex-col w-64 bg-slate-900 text-slate-200 border-r border-slate-800 shrink-0">
@@ -63,6 +66,19 @@ export default function Sidebar() {
             </span>
           </div>
         </Link>
+      </div>
+
+      {/* Estabelecimento Ativo */}
+      <div className="mx-4 mt-3 px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center space-x-2.5">
+        <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
+          <Building2 className="w-4 h-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block">Estabelecimento</span>
+          <span className="text-xs font-bold text-white block truncate" title={activeCompanyName}>
+            {activeCompanyName}
+          </span>
+        </div>
       </div>
 
       {/* Slogan Banner e Identificador do Tipo de Usuário */}
@@ -97,7 +113,11 @@ export default function Sidebar() {
           </span>
           <nav className="mt-2 space-y-1">
             {commercialNavigation
-              .filter((item) => !item.adminOnly || isOwnerOrAdmin)
+              .filter((item) => {
+                if (item.adminOnly) return isAdmin;
+                if ((item as any).managerOrAdmin) return isOwnerOrAdmin;
+                return true;
+              })
               .map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
@@ -119,7 +139,7 @@ export default function Sidebar() {
           </nav>
         </div>
 
-        {isOwnerOrAdmin && (
+        {isAdmin && (
           <div>
             <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Configurações

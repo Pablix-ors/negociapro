@@ -375,16 +375,28 @@ export default function NovoClientePage() {
 
             {type === 'PJ' && (
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Inscrição Estadual
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Inscrição Estadual
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setStateRegistration('ISENTO')}
+                    className="text-[10px] text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer"
+                  >
+                    Marcar como ISENTO
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={stateRegistration}
                   onChange={(e) => setStateRegistration(e.target.value)}
-                  placeholder="Ex: 123.456.789.000"
+                  placeholder="Ex: 10.123.456-7 ou ISENTO"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  A Inscrição Estadual é emitida pela SEFAZ estadual (Sintegra). Caso o cliente seja não contribuinte, digite <strong>ISENTO</strong>.
+                </p>
               </div>
             )}
 

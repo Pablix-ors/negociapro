@@ -27,7 +27,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const syncAuth = useCallback(async () => {
+  const syncAuth = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
     // 1. Verificar se existe sessão do Master (impersonation)
     const savedImpersonation = localStorage.getItem('negociapro_master_impersonated');
     const savedUser = localStorage.getItem('negociapro_user');
@@ -36,18 +38,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (savedImpersonation) {
       try {
         const comp = JSON.parse(savedImpersonation);
-        setCompany(comp);
+        setCompany((prev) => (prev?.id === comp.id ? prev : comp));
         if (savedUser) {
-          setUser(JSON.parse(savedUser));
+          const u = JSON.parse(savedUser);
+          setUser((prev) => (prev?.id === u.id && prev?.email === u.email ? prev : u));
         } else {
-          setUser({
+          setUser((prev) => (prev?.id === 'master-primary-001' ? prev : {
             id: 'master-primary-001',
             company_id: comp.id,
             name: 'Pablix (Suporte Master)',
             email: 'pablixgamezgg@gmail.com',
             role: 'ADMIN',
             active: true,
-          });
+          }));
         }
         setIsLoading(false);
         return;
@@ -59,8 +62,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsedUser: Profile = JSON.parse(savedUser);
         const parsedComp: Company = JSON.parse(savedCompany);
-        setUser(parsedUser);
-        setCompany(parsedComp);
+        setUser((prev) => (prev?.id === parsedUser.id && prev?.email === parsedUser.email ? prev : parsedUser));
+        setCompany((prev) => (prev?.id === parsedComp.id ? prev : parsedComp));
       } catch {
         setUser(null);
         setCompany(null);
@@ -86,17 +89,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setCompany(null);
           localStorage.removeItem('negociapro_user');
           localStorage.removeItem('negociapro_company');
-        } else if (session?.user && !user) {
+        } else if (session?.user) {
           // Se houver usuário no Supabase mas não no state local, reconciliar
-          const cleanEmail = session.user.email?.toLowerCase();
-          if (cleanEmail) {
+          setUser((prev) => {
+            if (prev) return prev;
             const savedUser = localStorage.getItem('negociapro_user');
             if (savedUser) {
               try {
-                setUser(JSON.parse(savedUser));
+                return JSON.parse(savedUser);
               } catch {}
             }
-          }
+            return null;
+          });
         }
       });
 
@@ -109,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.removeEventListener('storage', syncAuth);
       };
     }
-  }, [syncAuth, user]);
+  }, [syncAuth]);
 
   const login = async (
     email: string,

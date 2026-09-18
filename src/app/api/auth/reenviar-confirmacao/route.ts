@@ -77,10 +77,8 @@ export async function POST(request: Request) {
       );
     }
 
-    let confirmationUrl = `${appUrl}/auth/confirm?token_hash=${linkData?.properties?.hashed_token || ''}&type=signup`;
-    if (linkData?.properties?.action_link) {
-      confirmationUrl = linkData.properties.action_link;
-    }
+    const hashedToken = linkData?.properties?.hashed_token || '';
+    const confirmationUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=signup`;
 
     const userName = existingUser.user_metadata?.full_name || cleanEmail.split('@')[0];
     const companyName = existingUser.user_metadata?.company_name || 'NegociaPro';

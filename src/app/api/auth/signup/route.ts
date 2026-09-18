@@ -131,11 +131,9 @@ export async function POST(request: Request) {
       },
     });
 
-    // Se a URL gerada pelo Supabase usar localhost ou domínio interno, apontamos para nosso callback
-    let confirmationUrl = `${appUrl}/auth/confirm?token_hash=${linkData?.properties?.hashed_token || ''}&type=signup`;
-    if (linkData?.properties?.action_link) {
-      confirmationUrl = linkData.properties.action_link;
-    }
+    // Usar o endpoint local de confirmação com o hashed_token oficial do Supabase
+    const hashedToken = linkData?.properties?.hashed_token || '';
+    const confirmationUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=signup`;
 
     // 8. Enviar e-mail de confirmação via Brevo SMTP (API v3)
     const emailHtml = getSignupConfirmationTemplate({

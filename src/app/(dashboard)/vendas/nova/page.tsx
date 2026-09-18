@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatNumber } from '@/lib/formatters';
 import CustomerProductPriceHistory from '@/components/sales/CustomerProductPriceHistory';
 import {
@@ -21,6 +22,8 @@ import {
   DollarSign,
   Percent,
   RotateCcw,
+  Lock,
+  Key,
 } from 'lucide-react';
 
 interface CartItem {
@@ -41,6 +44,14 @@ function NovaVendaForm() {
   const repeatSaleIdParam = searchParams.get('repetir_venda') || '';
 
   const { customers, products, professionals, sales, createSale } = useData();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const isGerente = user?.role === 'GERENTE';
+  const canAuthorizeBelowMinPrice = isAdmin || isGerente;
+
+  // Estado de autorização de preço abaixo do mínimo
+  const [managerAuthorized, setManagerAuthorized] = useState(false);
+  const [managerNotes, setManagerNotes] = useState('');
 
   // Estado da Venda
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(customerIdParam);
@@ -249,6 +260,12 @@ function NovaVendaForm() {
     e.preventDefault();
     if (!selectedProductId || quantity <= 0 || unitPrice < 0) return;
 
+    // Se estiver abaixo do preço mínimo e for vendedor sem autorização do Gerente
+    if (isBelowMinPrice && !canAuthorizeBelowMinPrice && !managerAuthorized) {
+      alert('Preço abaixo do mínimo permitido! Apenas um GERENTE ou ADMINISTRADOR pode autorizar a venda deste item.');
+      return;
+    }
+
     const itemTotal = Math.max(0, quantity * unitPrice - discount);
     const commAmount = calculateItemCommission();
 
@@ -264,6 +281,8 @@ function NovaVendaForm() {
     };
 
     setCartItems([...cartItems, newItem]);
+    setManagerAuthorized(false);
+    setManagerNotes('');
   };
 
   // Remover item do carrinho
@@ -658,13 +677,74 @@ function NovaVendaForm() {
                 </div>
               </div>
 
-              {/* Trava de Preço Mínimo */}
+              {/* Trava de Preço Mínimo com Autorização de Gerente */}
               {isBelowMinPrice && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center space-x-2 text-xs text-red-800 font-semibold">
-                  <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>
-                    Atenção: O preço efetivo unitário (R$ {(unitPrice - discount / quantity).toFixed(2)}) está abaixo do preço mínimo permitido de {formatCurrency(currentProduct?.min_price)}.
-                  </span>
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl space-y-2.5 text-xs text-red-900">
+                  <div className="flex items-start space-x-2">
+                    <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">
+                        Preço Abaixo do Mínimo Permitido!
+                      </span>
+                      <p className="text-[11px] text-red-700 mt-0.5">
+                        O preço efetivo unitário negociado (R$ {(unitPrice - discount / quantity).toFixed(2)}) é inferior ao preço mínimo de tabela ({formatCurrency(currentProduct?.min_price)}).
+                      </p>
+                    </div>
+                  </div>
+
+                  {canAuthorizeBelowMinPrice ? (
+                    <div className="p-2.5 bg-white/80 rounded-lg border border-red-100 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-700">
+                        Como <strong>{user?.role}</strong>, você tem autonomia para autorizar essa margem.
+                      </span>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-full">
+                        AUTORIZAÇÃO GERENCIAL ATIVA
+                      </span>
+                    </div>
+                  ) : managerAuthorized ? (
+                    <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between text-emerald-800">
+                      <span className="text-[11px] font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Autorizado pela gerência: {managerNotes || 'Autorização concedida'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setManagerAuthorized(false)}
+                        className="text-[10px] font-semibold text-slate-500 underline hover:text-slate-800"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-white rounded-lg border border-red-200 space-y-2">
+                      <div className="flex items-center space-x-2 text-slate-700">
+                        <Lock className="w-4 h-4 text-amber-600" />
+                        <span className="text-[11px] font-bold">Solicitar / Informar Autorização de Gerência:</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Nome ou motivo do Gerente (ex: Autorizado por Gerente Carlos)"
+                          value={managerNotes}
+                          onChange={(e) => setManagerNotes(e.target.value)}
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!managerNotes.trim()) {
+                              alert('Por favor, informe a identificação da autorização ou do gerente responsável.');
+                              return;
+                            }
+                            setManagerAuthorized(true);
+                          }}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                        >
+                          Liberar Item
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

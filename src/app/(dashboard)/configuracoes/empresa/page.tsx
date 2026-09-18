@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { maskCNPJ, maskPhone, maskCEP } from '@/lib/formatters';
-import { Building2, Check, AlertCircle, Sparkles, Copy, Database, Key } from 'lucide-react';
+import { Building2, Check, AlertCircle, Sparkles, Copy, Database, Key, ShieldAlert, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 
 export default function EmpresaConfigPage() {
-  const { company, updateCompany } = useAuth();
+  const router = useRouter();
+  const { user, company, updateCompany, isLoading } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [copiedId, setCopiedId] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -30,8 +34,44 @@ export default function EmpresaConfigPage() {
 
   const [saved, setSaved] = useState(false);
 
+  // Redirecionar colaboradores não-admin para o dashboard
+  useEffect(() => {
+    if (!isLoading && user && !isAdmin) {
+      const timer = setTimeout(() => {
+        router.replace('/dashboard');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, user, isAdmin, router]);
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-4 animate-in fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          Acesso Restrito a Administradores
+        </h2>
+        <p className="text-xs text-slate-600 max-w-md mx-auto">
+          Você está conectado com o perfil <strong className="text-blue-600 font-bold">{user?.role || 'VENDEDOR'}</strong>. Apenas o administrador do estabelecimento possui permissão para visualizar e alterar os dados cadastrais da empresa.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar ao Dashboard</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) return;
     updateCompany(formData);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -48,6 +88,15 @@ export default function EmpresaConfigPage() {
         </p>
       </div>
 
+      {!isAdmin && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center space-x-3 text-xs text-amber-900 font-semibold">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+          <span>
+            Modo Somente Leitura: Apenas administradores do estabelecimento podem editar ou salvar as informações cadastrais da empresa.
+          </span>
+        </div>
+      )}
+
       {saved && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center space-x-2 text-xs text-emerald-800 font-bold animate-in fade-in">
           <Check className="w-5 h-5 text-emerald-600" />
@@ -56,6 +105,7 @@ export default function EmpresaConfigPage() {
       )}
 
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6">
+        <fieldset disabled={!isAdmin} className="space-y-6 disabled:opacity-85">
         {/* ID do Estabelecimento no Banco de Dados (Pronto para Cópia Rápida) */}
         <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
@@ -250,17 +300,20 @@ export default function EmpresaConfigPage() {
             </div>
           </div>
         </div>
+        </fieldset>
 
         {/* Salvar */}
-        <div className="flex justify-end pt-4 border-t border-slate-100">
-          <button
-            type="submit"
-            className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
-          >
-            <Check className="w-4 h-4" />
-            <span>Salvar Alterações da Empresa</span>
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex justify-end pt-4 border-t border-slate-100">
+            <button
+              type="submit"
+              className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>Salvar Alterações da Empresa</span>
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { UserCheck, Plus, Shield, User, Check, X } from 'lucide-react';
+import { UserCheck, Plus, Shield, User, Check, X, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import { Profile, UserRole } from '@/types/database';
 
 const DEFAULT_USERS: Profile[] = [
@@ -39,56 +39,101 @@ export default function UsuariosConfigPage() {
   const { user, company } = useAuth();
 
   const [usersList, setUsersList] = useState<Profile[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('VENDEDOR');
+  const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const isDemo = !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company';
-  const tenantStorageKey = company?.id ? `negociapro_users_list_tenant_${company.id}` : 'negociapro_users_list';
+  const targetCompanyId = company?.id || user?.company_id || '';
+  const tenantStorageKey = targetCompanyId ? `negociapro_users_list_tenant_${targetCompanyId}` : 'negociapro_users_list';
 
-  // Carregar usuários salvos do localStorage de acordo com a empresa
+  // Carregar usuários salvos do banco Supabase e sincronizar com localStorage
   useEffect(() => {
-    const raw = localStorage.getItem(tenantStorageKey);
-    if (raw) {
-      try {
-        const parsed: Profile[] = JSON.parse(raw);
-        if (!isDemo) {
-          const sanitized = parsed.filter(u => u.company_id !== 'a0000000-0000-0000-0000-000000000001' && u.name !== 'Carlos Vendedor Master');
-          setUsersList(sanitized);
-        } else {
-          setUsersList(parsed);
+    let isMounted = true;
+
+    async function loadUsers() {
+      // 1. Carregamento inicial rápido do cache local
+      const raw = localStorage.getItem(tenantStorageKey);
+      const generalRaw = localStorage.getItem('negociapro_users_list');
+      let cached: Profile[] = [];
+      if (raw) {
+        try { cached = JSON.parse(raw); } catch {}
+      } else if (generalRaw) {
+        try {
+          const parsed = JSON.parse(generalRaw);
+          cached = parsed.filter((u: any) => !targetCompanyId || u.company_id === targetCompanyId);
+        } catch {}
+      }
+
+      if (!isDemo && cached.length > 0) {
+        const sanitized = cached.filter(u => u.company_id !== 'a0000000-0000-0000-0000-000000000001' && u.name !== 'Carlos Vendedor Master');
+        if (isMounted) setUsersList(sanitized);
+      } else if (isDemo) {
+        if (isMounted) setUsersList(cached.length > 0 ? cached : DEFAULT_USERS);
+      }
+
+      // 2. Se não for demo e tiver targetCompanyId, buscar do banco de dados remoto
+      if (!isDemo && targetCompanyId) {
+        setLoadingUsers(true);
+        try {
+          const res = await fetch(`/api/users/list?companyId=${encodeURIComponent(targetCompanyId)}`);
+          const data = await res.json();
+          if (res.ok && data.success && Array.isArray(data.users)) {
+            let serverUsers: Profile[] = data.users;
+
+            // Se o usuário atual logado não estiver na lista retornada do banco, incluir
+            if (user && !serverUsers.some(u => u.email.toLowerCase() === user.email.toLowerCase())) {
+              serverUsers = [user, ...serverUsers];
+            }
+
+            // Mesclar também com usuários locais que ainda não foram sincronizados
+            cached.forEach(locU => {
+              if (!serverUsers.some(su => su.email.toLowerCase() === locU.email.toLowerCase())) {
+                serverUsers.push(locU);
+              }
+            });
+
+            if (isMounted) {
+              setUsersList(serverUsers);
+              localStorage.setItem(tenantStorageKey, JSON.stringify(serverUsers));
+              localStorage.setItem('negociapro_users_list', JSON.stringify(serverUsers));
+            }
+          }
+        } catch (err) {
+          console.warn('Não foi possível sincronizar usuários com a nuvem:', err);
+        } finally {
+          if (isMounted) setLoadingUsers(false);
         }
-        return;
-      } catch {}
+      }
     }
-    
-    // Se não for demo, começar apenas com o usuário atual autenticado ou vazio
-    if (!isDemo) {
-      const initialUsers: Profile[] = user ? [user] : [];
-      setUsersList(initialUsers);
-      localStorage.setItem(tenantStorageKey, JSON.stringify(initialUsers));
-    } else {
-      setUsersList(DEFAULT_USERS);
-      localStorage.setItem(tenantStorageKey, JSON.stringify(DEFAULT_USERS));
-    }
-  }, [tenantStorageKey, isDemo, user]);
+
+    loadUsers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tenantStorageKey, targetCompanyId, isDemo, user]);
 
   const saveUsersState = (newList: Profile[]) => {
     setUsersList(newList);
     localStorage.setItem(tenantStorageKey, JSON.stringify(newList));
+    localStorage.setItem('negociapro_users_list', JSON.stringify(newList));
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail || !newEmail.includes('@')) return;
 
-    const targetCompanyId = company?.id || user?.company_id || 'demo-company';
+    const companyIdToUse = targetCompanyId || 'demo-company';
     const targetCompanyName = company?.trade_name || company?.name || 'Minha Empresa';
 
     const newUser: Profile = {
       id: `usr-${Date.now()}`,
-      company_id: targetCompanyId,
+      company_id: companyIdToUse,
       name: newName || newEmail.split('@')[0],
       email: newEmail.trim().toLowerCase(),
       role: newRole,
@@ -106,7 +151,7 @@ export default function UsuariosConfigPage() {
           name: newName,
           email: newEmail.trim(),
           role: newRole,
-          companyId: targetCompanyId,
+          companyId: companyIdToUse,
           companyName: targetCompanyName,
         }),
       });
@@ -173,6 +218,50 @@ export default function UsuariosConfigPage() {
   const toggleUserStatus = (id: string) => {
     const updated = usersList.map((u) => (u.id === id ? { ...u, active: !u.active } : u));
     saveUsersState(updated);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    if (!isAdmin) {
+      setFeedbackMessage({ type: 'error', text: 'Apenas administradores podem excluir usuários.' });
+      return;
+    }
+
+    // Não permitir que o usuário exclua a si mesmo diretamente
+    if (user && (user.id === userToDelete.id || user.email.toLowerCase() === userToDelete.email.toLowerCase())) {
+      setFeedbackMessage({ type: 'error', text: 'Você não pode excluir o seu próprio usuário logado.' });
+      setUserToDelete(null);
+      return;
+    }
+
+    setIsDeleting(true);
+
+    try {
+      // 1. Chamar API para remover do banco e auth
+      await fetch('/api/users/list', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userToDelete.id,
+          email: userToDelete.email,
+          companyId: targetCompanyId,
+          requesterRole: user?.role || 'ADMIN',
+        }),
+      });
+
+      // 2. Atualizar estado local
+      const updated = usersList.filter((u) => u.id !== userToDelete.id && u.email.toLowerCase() !== userToDelete.email.toLowerCase());
+      saveUsersState(updated);
+      setFeedbackMessage({ type: 'success', text: `Usuário ${userToDelete.name} excluído com sucesso!` });
+    } catch {
+      const updated = usersList.filter((u) => u.id !== userToDelete.id);
+      saveUsersState(updated);
+      setFeedbackMessage({ type: 'success', text: `Usuário ${userToDelete.name} removido da lista.` });
+    } finally {
+      setIsDeleting(false);
+      setUserToDelete(null);
+      setTimeout(() => setFeedbackMessage(null), 3500);
+    }
   };
 
   return (
@@ -255,77 +344,171 @@ export default function UsuariosConfigPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {usersList.map((u) => (
-              <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 font-bold text-slate-900">{u.name}</td>
-                <td className="p-4 text-slate-600">{u.email}</td>
-                <td className="p-4">
-                  {isAdmin ? (
-                    <div className="inline-flex items-center space-x-1.5">
-                      <select
-                        value={u.role}
-                        disabled={updatingRoleId === u.id}
-                        onChange={(e) => handleRoleChange(u.id, u.email, e.target.value as UserRole)}
-                        title="Alterar cargo deste colaborador"
-                        className={`text-[11px] font-bold rounded-lg px-2.5 py-1 border cursor-pointer transition-all outline-hidden focus:ring-2 focus:ring-blue-500 ${
-                          u.role === 'ADMIN'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70'
-                            : u.role === 'GERENTE'
-                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/70'
-                            : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70'
-                        } ${updatingRoleId === u.id ? 'opacity-50 pointer-events-none' : ''}`}
-                      >
-                        <option value="ADMIN">ADMIN</option>
-                        <option value="GERENTE">GERENTE</option>
-                        <option value="VENDEDOR">VENDEDOR</option>
-                      </select>
-                      {updatingRoleId === u.id && (
-                        <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              {usersList.map((u) => {
+                const isOwnerAccount = company?.email && u.email.toLowerCase() === company.email.toLowerCase();
+                const isSelf = user && (user.id === u.id || user.email.toLowerCase() === u.email.toLowerCase());
+
+                return (
+                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-bold text-slate-900">{u.name}</span>
+                      {isOwnerAccount && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-50 text-purple-700 border border-purple-200">
+                          TITULAR
+                        </span>
+                      )}
+                      {isSelf && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
+                          VOCÊ
+                        </span>
                       )}
                     </div>
-                  ) : (
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        u.role === 'ADMIN'
-                          ? 'bg-rose-50 text-rose-700'
-                          : u.role === 'GERENTE'
-                          ? 'bg-indigo-50 text-indigo-700'
-                          : 'bg-blue-50 text-blue-700'
-                      }`}
-                    >
-                      {u.role}
-                    </span>
-                  )}
-                </td>
-                <td className="p-4 text-center">
-                  {u.active ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-                      Ativo
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
-                      Desativado
-                    </span>
-                  )}
-                </td>
-                <td className="p-4 text-center">
-                  {isAdmin ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleUserStatus(u.id)}
-                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer"
-                    >
-                      {u.active ? 'Desativar' : 'Reativar'}
-                    </button>
-                  ) : (
-                    <span className="text-[11px] text-slate-400 font-medium">Sem permissão</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="p-4 text-slate-600 font-mono text-[11px]">{u.email}</td>
+                  <td className="p-4">
+                    {isAdmin && !isOwnerAccount ? (
+                      <div className="inline-flex items-center space-x-1.5">
+                        <select
+                          value={u.role}
+                          disabled={updatingRoleId === u.id}
+                          onChange={(e) => handleRoleChange(u.id, u.email, e.target.value as UserRole)}
+                          title="Alterar cargo deste colaborador"
+                          className={`text-[11px] font-bold rounded-lg px-2.5 py-1 border cursor-pointer transition-all outline-hidden focus:ring-2 focus:ring-blue-500 ${
+                            u.role === 'ADMIN'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70'
+                              : u.role === 'GERENTE'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100/70'
+                              : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70'
+                          } ${updatingRoleId === u.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        >
+                          <option value="ADMIN">ADMIN</option>
+                          <option value="GERENTE">GERENTE</option>
+                          <option value="VENDEDOR">VENDEDOR</option>
+                        </select>
+                        {updatingRoleId === u.id && (
+                          <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        )}
+                      </div>
+                    ) : (
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          u.role === 'ADMIN'
+                            ? 'bg-rose-50 text-rose-700'
+                            : u.role === 'GERENTE'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'bg-blue-50 text-blue-700'
+                        }`}
+                      >
+                        {u.role} {isOwnerAccount ? '(DONO)' : ''}
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-4 text-center">
+                    {u.active ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
+                        Ativo
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                        Desativado
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-4 text-center">
+                    {isAdmin ? (
+                      <div className="flex items-center justify-center space-x-2">
+                        {isOwnerAccount || isSelf ? (
+                          <span className="text-[11px] text-slate-400 italic">Conta Principal</span>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => toggleUserStatus(u.id)}
+                              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                            >
+                              {u.active ? 'Desativar' : 'Reativar'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setUserToDelete(u)}
+                              className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              title="Excluir este usuário"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 font-medium">Sem permissão</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* Modal Confirmar Exclusão de Usuário */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-slate-100 space-y-4">
+            <div className="flex items-center space-x-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Excluir Usuário</h3>
+                <p className="text-xs text-slate-500">Esta ação revoga o acesso deste colaborador.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs space-y-1">
+              <p className="font-bold text-slate-800">{userToDelete.name}</p>
+              <p className="text-slate-500 font-mono text-[11px]">{userToDelete.email}</p>
+              <p className="text-[11px] text-slate-600">
+                Cargo atual: <strong className="text-blue-600">{userToDelete.role}</strong>
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Tem certeza de que deseja remover este usuário da equipe? Ele não poderá mais acessar o sistema deste estabelecimento.
+            </p>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setUserToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteUser}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirmar Exclusão</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Convidar Usuário */}
       {showModal && (

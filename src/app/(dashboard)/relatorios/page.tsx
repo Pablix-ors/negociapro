@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import * as XLSX from 'xlsx';
 import {
@@ -46,12 +47,21 @@ const PIE_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b
 
 export default function RelatoriosPage() {
   const { sales, customers, products, professionals, commissions } = useData();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const isGerente = user?.role === 'GERENTE';
+  const isSeller = user?.role === 'VENDEDOR';
 
   const [category, setCategory] = useState<ReportCategory>('vendas');
   const [viewMode, setViewMode] = useState<ViewMode>('both');
   const [selectedProfId, setSelectedProfId] = useState<string>('ALL');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [isMounted, setIsMounted] = useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Vendas filtradas
   const filteredSales = useMemo(() => {
@@ -431,41 +441,47 @@ export default function RelatoriosPage() {
           </div>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setCategory('profissionais')}
-          className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between ${
-            category === 'profissionais'
-              ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
-              : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-800'
-          }`}
-        >
-          <Award className="w-5 h-5 mb-2" />
-          <div>
-            <span className="text-xs font-bold block">4. Profissionais</span>
-            <span className={`text-[10px] ${category === 'profissionais' ? 'text-blue-100' : 'text-slate-400'}`}>
-              Comissões & Metas
-            </span>
-          </div>
-        </button>
+        {/* 4. Profissionais (Apenas Gerente e Admin) */}
+        {!isSeller && (
+          <button
+            type="button"
+            onClick={() => setCategory('profissionais')}
+            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+              category === 'profissionais'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
+                : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-800'
+            }`}
+          >
+            <Award className="w-5 h-5 mb-2" />
+            <div>
+              <span className="text-xs font-bold block">4. Profissionais</span>
+              <span className={`text-[10px] ${category === 'profissionais' ? 'text-blue-100' : 'text-slate-400'}`}>
+                Comissões & Metas
+              </span>
+            </div>
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => setCategory('financeiro')}
-          className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between col-span-2 sm:col-span-1 ${
-            category === 'financeiro'
-              ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
-              : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-800'
-          }`}
-        >
-          <DollarSign className="w-5 h-5 mb-2" />
-          <div>
-            <span className="text-xs font-bold block">5. Financeiro</span>
-            <span className={`text-[10px] ${category === 'financeiro' ? 'text-blue-100' : 'text-slate-400'}`}>
-              Líquido & DRE
-            </span>
-          </div>
-        </button>
+        {/* 5. Financeiro (Apenas Admin) */}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setCategory('financeiro')}
+            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between col-span-2 sm:col-span-1 ${
+              category === 'financeiro'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
+                : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-800'
+            }`}
+          >
+            <DollarSign className="w-5 h-5 mb-2" />
+            <div>
+              <span className="text-xs font-bold block">5. Financeiro</span>
+              <span className={`text-[10px] ${category === 'financeiro' ? 'text-blue-100' : 'text-slate-400'}`}>
+                Líquido & DRE
+              </span>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Barra de Filtros (Quando categoria for Vendas) */}
@@ -515,7 +531,7 @@ export default function RelatoriosPage() {
       )}
 
       {/* SEÇÃO DE GRÁFICOS VISUAIS */}
-      {(viewMode === 'both' || viewMode === 'charts') && (
+      {(viewMode === 'both' || viewMode === 'charts') && isMounted && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">

@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Sliders, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import { Sliders, Check, ShieldAlert, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 
 export default function PreferenciasConfigPage() {
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
   const [currency, setCurrency] = useState('BRL (R$)');
   const [decimals, setDecimals] = useState(2);
   const [dateFormat, setDateFormat] = useState('DD/MM/YYYY');
@@ -12,6 +19,40 @@ export default function PreferenciasConfigPage() {
   const [showPriceHistoryInSale, setShowPriceHistoryInSale] = useState(true);
   const [historyLimit, setHistoryLimit] = useState(5);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && user && !isAdmin) {
+      const timer = setTimeout(() => {
+        router.replace('/dashboard');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, user, isAdmin, router]);
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-4 animate-in fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          Acesso Restrito a Administradores
+        </h2>
+        <p className="text-xs text-slate-600 max-w-md mx-auto">
+          Você está conectado com o perfil <strong className="text-blue-600 font-bold">{user?.role || 'VENDEDOR'}</strong>. Apenas o administrador do estabelecimento possui permissão para definir as regras e preferências de negociação.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar ao Dashboard</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();

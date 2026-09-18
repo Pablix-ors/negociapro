@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import {
   User,
@@ -14,10 +14,14 @@ import {
   Building2,
   KeyRound,
   CheckCircle2,
+  ShieldCheck,
+  RefreshCw,
+  Send,
+  Clock,
 } from 'lucide-react';
 
 export default function MeuPerfilPage() {
-  const { user, company, updateProfile, updateUserPassword } = useAuth();
+  const { user, company, updateProfile, updateUserPassword, resendConfirmation } = useAuth();
 
   // Dados do Perfil
   const [name, setName] = useState(user?.name || '');
@@ -25,6 +29,66 @@ export default function MeuPerfilPage() {
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // Status de Verificação de E-mail
+  const [isEmailVerified, setIsEmailVerified] = useState<boolean | null>(null);
+  const [checkingEmailStatus, setCheckingEmailStatus] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [emailStatusMessage, setEmailStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Verificar status real de e-mail verificado no Supabase Auth
+  useEffect(() => {
+    async function checkStatus() {
+      if (!user?.email) return;
+      setCheckingEmailStatus(true);
+      try {
+        const res = await fetch('/api/auth/email-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, userId: user.id }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setIsEmailVerified(Boolean(data.verified));
+        } else {
+          setIsEmailVerified(false);
+        }
+      } catch (e) {
+        setIsEmailVerified(false);
+      } finally {
+        setCheckingEmailStatus(false);
+      }
+    }
+    checkStatus();
+  }, [user?.email, user?.id]);
+
+  const handleResendVerification = async () => {
+    if (!user?.email || resendingEmail) return;
+    setResendingEmail(true);
+    setEmailStatusMessage(null);
+
+    try {
+      const res = await resendConfirmation(user.email);
+      if (res.success) {
+        setEmailStatusMessage({
+          type: 'success',
+          text: res.message || 'Link de confirmação enviado com sucesso! Verifique sua caixa de entrada e spam.',
+        });
+      } else {
+        setEmailStatusMessage({
+          type: 'error',
+          text: res.message || 'Não foi possível reenviar o link no momento.',
+        });
+      }
+    } catch (e: any) {
+      setEmailStatusMessage({
+        type: 'error',
+        text: 'Erro ao enviar e-mail. Tente novamente em instantes.',
+      });
+    } finally {
+      setResendingEmail(false);
+    }
+  };
 
   // Redefinição de Senha
   const [currentPassword, setCurrentPassword] = useState('');
@@ -159,7 +223,28 @@ export default function MeuPerfilPage() {
                 {user?.role || 'VENDEDOR'}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">{user?.email}</p>
+            <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
+              <p className="text-xs text-slate-500">{user?.email}</p>
+              
+              {/* Badge de E-mail Verificado ou Pendente */}
+              {checkingEmailStatus ? (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span>Verificando status...</span>
+                </span>
+              ) : isEmailVerified ? (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                  <span>E-mail Verificado</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                  <Clock className="w-3 h-3 text-amber-600" />
+                  <span>E-mail Não Confirmado</span>
+                </span>
+              )}
+            </div>
+
             <div className="flex items-center space-x-1.5 text-[11px] text-slate-400 mt-1">
               <Building2 className="w-3.5 h-3.5 text-slate-400" />
               <span>{company?.trade_name || company?.name || 'Estabelecimento NegociaPro'}</span>
@@ -203,17 +288,89 @@ export default function MeuPerfilPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">E-mail (Login)</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700">E-mail (Login)</label>
+                {!checkingEmailStatus && (
+                  isEmailVerified ? (
+                    <span className="text-[10px] font-bold text-emerald-600 flex items-center space-x-1">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>Verificado</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-600 flex items-center space-x-1">
+                      <Clock className="w-3 h-3" />
+                      <span>Pendente de Ativação</span>
+                    </span>
+                  )
+                )}
+              </div>
               <div className="relative">
                 <input
                   type="email"
                   disabled
                   value={user?.email || ''}
-                  className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed font-medium"
+                  className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 cursor-not-allowed font-medium pr-10"
                 />
                 <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">O e-mail de login corporativo é gerenciado pela administração.</p>
+
+              {/* Mensagem de status de reenvio de e-mail */}
+              {emailStatusMessage && (
+                <div
+                  className={`mt-2 p-2.5 rounded-lg text-xs font-medium flex items-center space-x-2 ${
+                    emailStatusMessage.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {emailStatusMessage.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <span>{emailStatusMessage.text}</span>
+                </div>
+              )}
+
+              {/* Bloco explicativo com botão profissional para reenviar confirmação */}
+              {!isEmailVerified && !checkingEmailStatus && (
+                <div className="mt-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-300/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-start space-x-2">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-900">Seu e-mail ainda não foi confirmado</p>
+                      <p className="text-[11px] text-amber-700 leading-tight mt-0.5">
+                        Confirme seu endereço para garantir a segurança e recuperação da sua conta corporativa.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={resendingEmail}
+                    className="inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs shrink-0 disabled:opacity-50 cursor-pointer"
+                  >
+                    {resendingEmail ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Enviando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Enviar Confirmação</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {isEmailVerified && (
+                <p className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center space-x-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                  <span>Conta oficial autenticada e protegida com e-mail confirmado.</span>
+                </p>
+              )}
             </div>
 
             <div>

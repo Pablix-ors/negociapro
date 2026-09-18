@@ -26,7 +26,7 @@ const primaryMobileNav = [
 ];
 
 export default function MobileNavigation() {
-  const pathname = usePathname();
+  const pathname = usePathname() || '';
   const [moreOpen, setMoreOpen] = useState(false);
 
   return (

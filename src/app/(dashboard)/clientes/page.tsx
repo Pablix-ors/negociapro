@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
+import { Customer } from '@/types/database';
 import { formatCurrency, formatDate, maskCPF, maskCNPJ } from '@/lib/formatters';
 import {
   Users,
@@ -14,20 +16,32 @@ import {
   Phone,
   Mail,
   MapPin,
+  Trash2,
+  Edit2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 
 export default function ClientesPage() {
-  const { customers } = useData();
+  const { customers, deleteCustomer } = useData();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [filterQuery, setFilterQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'PF' | 'PJ'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
 
-  const filteredCustomers = customers.filter((c) => {
+  // Modal de Exclusão de Cliente
+  const [clientToDelete, setClientToDelete] = useState<Customer | null>(null);
+
+  const safeCustomers = Array.isArray(customers) ? customers.filter(Boolean) : [];
+
+  const filteredCustomers = safeCustomers.filter((c) => {
+    const query = filterQuery.toLowerCase();
     const matchesQuery =
-      c.name.toLowerCase().includes(filterQuery.toLowerCase()) ||
-      c.document.includes(filterQuery) ||
-      (c.trade_name && c.trade_name.toLowerCase().includes(filterQuery.toLowerCase())) ||
-      (c.city && c.city.toLowerCase().includes(filterQuery.toLowerCase()));
+      (c.name && c.name.toLowerCase().includes(query)) ||
+      (c.document && c.document.includes(filterQuery)) ||
+      (c.trade_name && c.trade_name.toLowerCase().includes(query)) ||
+      (c.city && c.city.toLowerCase().includes(query));
 
     const matchesType = typeFilter === 'ALL' || c.type === typeFilter;
     const matchesStatus =
@@ -197,13 +211,27 @@ export default function ClientesPage() {
                         )}
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
-                        <Link
-                          href={`/clientes/${cust.id}`}
-                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[11px] transition-colors"
-                        >
-                          <span>Painel</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </Link>
+                        <div className="flex items-center justify-center space-x-1.5">
+                          <Link
+                            href={`/clientes/${cust.id}`}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[11px] transition-colors"
+                            title="Ver painel e histórico comercial"
+                          >
+                            <span>Painel</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </Link>
+
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setClientToDelete(cust)}
+                              className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              title="Excluir cliente"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -228,13 +256,25 @@ export default function ClientesPage() {
                       </span>
                     </div>
 
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
-                        cust.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      {cust.active ? 'Ativo' : 'Inativo'}
-                    </span>
+                    <div className="flex items-center space-x-1.5">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                          cust.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {cust.active ? 'Ativo' : 'Inativo'}
+                      </span>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setClientToDelete(cust)}
+                          className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          title="Excluir cliente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
@@ -264,6 +304,49 @@ export default function ClientesPage() {
           </>
         )}
       </div>
+
+      {/* Modal de Confirmação de Exclusão de Cliente */}
+      {clientToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200/90 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900">Excluir Cliente?</h3>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  Tem certeza que deseja remover o cliente <strong>{clientToDelete.name}</strong> da carteira? Esta ação excluirá este registro deste estabelecimento.
+                </p>
+                <div className="mt-2.5 p-2 bg-slate-50 rounded-lg text-[11px] text-slate-600 border border-slate-100 font-mono">
+                  {clientToDelete.type} • {clientToDelete.document || 'Sem documento'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setClientToDelete(null)}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCustomer(clientToDelete.id);
+                  setClientToDelete(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/20 active:scale-95 cursor-pointer flex items-center space-x-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Sim, Excluir</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
