@@ -117,7 +117,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Chave prefixada para isolamento estrito entre empresas (Multi-Tenant)
   const tenantKey = company?.id ? `_tenant_${company.id}` : '';
-  const isDemoCompany = !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company';
+  const isDemoCompany = React.useMemo(
+    () => !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company',
+    [company?.id] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Helper seguro para localStorage (evita travar a aplicação caso atinja a cota do navegador de 5MB)
   const safeSetItem = (key: string, value: string) => {
@@ -250,7 +253,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setNotifications(isDemo ? DEMO_NOTIFICATIONS : []);
     }
-  }, [tenantKey, isDemoCompany, company?.id]);
+  }, [tenantKey, company?.id]); // isDemoCompany já depende de company?.id via useMemo
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
