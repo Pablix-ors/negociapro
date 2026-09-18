@@ -1,19 +1,21 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Profile, Company } from '@/types/database';
-import { DEMO_USER, DEMO_COMPANY } from '@/lib/mockData';
+import { DEMO_COMPANY } from '@/lib/mockData';
+import { createClient } from '@/lib/supabase/client';
 
 interface AuthContextType {
   user: Profile | null;
   company: Company | null;
   role: 'ADMIN' | 'GERENTE' | 'VENDEDOR';
   isLoading: boolean;
-  login: (email: string, pass: string) => Promise<{ success: boolean; message?: string }>;
-  signUp: (email: string, pass: string, companyName: string, fullName: string) => Promise<{ success: boolean; message?: string }>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; message?: string; needsEmailConfirmation?: boolean }>;
+  signUp: (email: string, pass: string, companyName: string, fullName: string, cnpj?: string) => Promise<{ success: boolean; message?: string; requiresEmailConfirmation?: boolean }>;
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>;
   updateUserPassword: (newPass: string) => Promise<{ success: boolean; message?: string }>;
-  logout: () => void;
+  resendConfirmation: (email: string) => Promise<{ success: boolean; message?: string }>;
+  logout: () => Promise<void>;
   updateCompany: (updated: Partial<Company>) => void;
   updateProfile: (updated: Partial<Profile>) => void;
 }
@@ -25,75 +27,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    const syncAuth = () => {
-      const savedImpersonation = localStorage.getItem('negociapro_master_impersonated');
-      const savedUser = localStorage.getItem('negociapro_user');
-      const savedCompany = localStorage.getItem('negociapro_company');
+  const syncAuth = useCallback(async () => {
+    // 1. Verificar se existe sessão do Master (impersonation)
+    const savedImpersonation = localStorage.getItem('negociapro_master_impersonated');
+    const savedUser = localStorage.getItem('negociapro_user');
+    const savedCompany = localStorage.getItem('negociapro_company');
 
-      if (savedImpersonation) {
-        try {
-          const comp = JSON.parse(savedImpersonation);
-          setCompany(comp);
-          if (savedUser) {
-            setUser(JSON.parse(savedUser));
-          } else {
-            setUser({
-              id: 'master-primary-001',
-              company_id: comp.id,
-              name: 'Pablix (Suporte Master)',
-              email: 'pablixgamezgg@gmail.com',
-              role: 'ADMIN',
-              active: true,
-            });
-          }
-          setIsLoading(false);
-          return;
-        } catch {}
-      }
-
-      if (savedUser && savedCompany) {
-        try {
+    if (savedImpersonation) {
+      try {
+        const comp = JSON.parse(savedImpersonation);
+        setCompany(comp);
+        if (savedUser) {
           setUser(JSON.parse(savedUser));
-          const parsedComp: Company = JSON.parse(savedCompany);
-          
-          // Verificar se o status da empresa foi alterado na lista de estabelecimentos master
-          const masterCompaniesStr = localStorage.getItem('negociapro_master_companies');
-          if (masterCompaniesStr) {
-            try {
-              const masterList: Company[] = JSON.parse(masterCompaniesStr);
-              const found = masterList.find((c) => c.id === parsedComp.id);
-              if (found) {
-                parsedComp.status = found.status;
-                parsedComp.blocked_reason = found.blocked_reason;
-              }
-            } catch {}
-          }
-          
-          setCompany(parsedComp);
-        } catch {
-          setUser(null);
-          setCompany(null);
+        } else {
+          setUser({
+            id: 'master-primary-001',
+            company_id: comp.id,
+            name: 'Pablix (Suporte Master)',
+            email: 'pablixgamezgg@gmail.com',
+            role: 'ADMIN',
+            active: true,
+          });
         }
-      } else {
+        setIsLoading(false);
+        return;
+      } catch {}
+    }
+
+    // 2. Verificar estado salvo no localStorage
+    if (savedUser && savedCompany) {
+      try {
+        const parsedUser: Profile = JSON.parse(savedUser);
+        const parsedComp: Company = JSON.parse(savedCompany);
+        setUser(parsedUser);
+        setCompany(parsedComp);
+      } catch {
         setUser(null);
         setCompany(null);
       }
-      setIsLoading(false);
-    };
+    } else {
+      setUser(null);
+      setCompany(null);
+    }
 
-    syncAuth();
-    window.addEventListener('storage', syncAuth);
-    return () => window.removeEventListener('storage', syncAuth);
+    setIsLoading(false);
   }, []);
 
-  const login = async (email: string, pass: string): Promise<{ success: boolean; message?: string }> => {
+  useEffect(() => {
+    syncAuth();
+    window.addEventListener('storage', syncAuth);
+
+    // Escutar mudanças oficiais de sessão do Supabase Auth
+    try {
+      const supabase = createClient();
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setCompany(null);
+          localStorage.removeItem('negociapro_user');
+          localStorage.removeItem('negociapro_company');
+        } else if (session?.user && !user) {
+          // Se houver usuário no Supabase mas não no state local, reconciliar
+          const cleanEmail = session.user.email?.toLowerCase();
+          if (cleanEmail) {
+            const savedUser = localStorage.getItem('negociapro_user');
+            if (savedUser) {
+              try {
+                setUser(JSON.parse(savedUser));
+              } catch {}
+            }
+          }
+        }
+      });
+
+      return () => {
+        window.removeEventListener('storage', syncAuth);
+        authListener?.subscription?.unsubscribe();
+      };
+    } catch {
+      return () => {
+        window.removeEventListener('storage', syncAuth);
+      };
+    }
+  }, [syncAuth, user]);
+
+  const login = async (
+    email: string,
+    pass: string
+  ): Promise<{ success: boolean; message?: string; needsEmailConfirmation?: boolean }> => {
     setIsLoading(true);
 
     try {
       const cleanEmail = email.trim().toLowerCase();
 
-      // Chamada à rota segura de autenticação
+      // Chamada à rota segura de autenticação no backend
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,7 +131,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!res.ok || !data.success) {
         setIsLoading(false);
-        return { success: false, message: data.message || 'Credenciais inválidas.' };
+        return {
+          success: false,
+          needsEmailConfirmation: data.needsEmailConfirmation,
+          message: data.message || 'Credenciais inválidas.',
+        };
+      }
+
+      // Sincronizar sessão oficial no Supabase Client do navegador se houver sessão
+      if (data.session) {
+        try {
+          const supabase = createClient();
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          });
+        } catch (sessErr) {
+          console.warn('Erro ao sincronizar sessão no client Supabase:', sessErr);
+        }
       }
 
       const loggedUser: Profile = data.user;
@@ -120,159 +164,138 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.error('Erro no login:', err);
       setIsLoading(false);
-      return { success: false, message: err?.message || 'Falha ao conectar com o servidor.' };
+      return { success: false, message: 'Não foi possível conectar ao servidor. Tente novamente.' };
     }
   };
 
-  const signUp = async (email: string, pass: string, companyName: string, fullName: string): Promise<{ success: boolean; message?: string }> => {
+  const signUp = async (
+    email: string,
+    pass: string,
+    companyName: string,
+    fullName: string,
+    cnpj?: string
+  ): Promise<{ success: boolean; message?: string; requiresEmailConfirmation?: boolean }> => {
     try {
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
-        email,
-        password: pass,
-        options: {
-          data: {
-            full_name: fullName,
-            company_name: companyName,
-          },
-        },
-      });
-
-      // Independente do Supabase (offline/online), registrar o perfil do novo usuário no cliente
-      const newUserId = `usr-${Date.now()}`;
-      const newCompanyId = `comp-${Date.now()}`;
-      const newUserProfile: Profile = {
-        id: newUserId,
-        company_id: newCompanyId,
-        name: fullName || email.split('@')[0],
-        email: email,
-        role: 'ADMIN',
-        active: true,
-      };
-      const newCompanyProfile: Company = {
-        id: newCompanyId,
-        name: companyName || 'Minha Empresa',
-        trade_name: companyName || 'Minha Empresa',
-        cnpj: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      // Define novo usuário e empresa
-      setUser(newUserProfile);
-      setCompany(newCompanyProfile);
-      localStorage.setItem('negociapro_user', JSON.stringify(newUserProfile));
-      localStorage.setItem('negociapro_company', JSON.stringify(newCompanyProfile));
-
-      // Salvar a nova empresa diretamente na tabela companies do Supabase
-      fetch('/api/master/estabelecimentos', {
+      const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: companyName || 'Minha Empresa',
-          trade_name: companyName || 'Minha Empresa',
-          email: email,
-          status: 'ATIVO',
+          email: email.trim().toLowerCase(),
+          password: pass,
+          companyName: companyName.trim(),
+          userName: fullName.trim(),
+          cnpj: cnpj || '',
         }),
-      }).catch(err => console.error('Erro ao registrar empresa no banco Supabase:', err));
+      });
 
-      // Limpar todos os dados demo de clientes, produtos, vendas e notificações para a nova conta começar 100% zerada
-      localStorage.removeItem('negociapro_customers');
-      localStorage.removeItem('negociapro_products');
-      localStorage.removeItem('negociapro_sales');
-      localStorage.removeItem('negociapro_history');
-      localStorage.removeItem('negociapro_notifications');
+      const data = await res.json();
 
-      // Se houver erro de envio de email de confirmação no Supabase (comum no tier gratuito / rate limit de SMTP do Supabase)
-      if (error) {
-        // Se foi erro de envio de email (ex: rate limit de email do Supabase ou SMTP não configurado), a conta/empresa ainda foi salva localmente e na API
-        if (error.message.toLowerCase().includes('email') || error.message.toLowerCase().includes('confirmation') || error.message.toLowerCase().includes('rate limit')) {
-          console.warn('Aviso de envio de e-mail do Supabase:', error.message);
-          return {
-            success: true,
-            message: 'Conta e empresa cadastradas com sucesso! Redirecionando para o painel...',
-          };
-        }
-        return { success: false, message: error.message };
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          message: data.message || 'Erro ao realizar cadastro.',
+        };
       }
 
       return {
         success: true,
-        message: 'Conta criada com sucesso! Redirecionando...',
+        requiresEmailConfirmation: true,
+        message: data.message || 'Cadastro realizado com sucesso! Enviamos um link de confirmação para o seu e-mail.',
       };
-    } catch {
+    } catch (err: any) {
       return {
-        success: true,
-        message: 'Cadastro efetuado com sucesso!',
+        success: false,
+        message: 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.',
+      };
+    }
+  };
+
+  const resendConfirmation = async (email: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await fetch('/api/auth/reenviar-confirmacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const data = await res.json();
+      return {
+        success: data.success,
+        message: data.message || 'Solicitação enviada com sucesso.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: 'Falha ao solicitar reenvio de confirmação.',
       };
     }
   };
 
   const resetPassword = async (email: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      // 1. Tentar envio direto e confiável via Resend
-      const resendResponse = await fetch('/api/auth/recuperar-senha', {
+      const res = await fetch('/api/auth/recuperar-senha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
-      if (resendResponse.ok) {
-        const data = await resendResponse.json();
-        return {
-          success: true,
-          message: data.message || 'Link seguro de recuperação enviado para seu e-mail pelo Resend!',
-        };
-      }
-
-      // 2. Fallback para Supabase se a rota local falhar
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${origin}/redefinir-senha`,
-      });
-
-      if (error) {
-        return { success: false, message: error.message };
-      }
-
+      const data = await res.json();
       return {
-        success: true,
-        message: 'Enviamos um link seguro de recuperação para seu e-mail.',
+        success: data.success,
+        message: data.message || 'Link seguro enviado com sucesso para seu e-mail.',
       };
     } catch {
       return {
-        success: true,
-        message: 'Link de redefinição enviado para o e-mail informado.',
+        success: false,
+        message: 'Não foi possível conectar ao servidor. Tente novamente.',
       };
     }
   };
 
   const updateUserPassword = async (newPass: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      const { createClient } = await import('@/lib/supabase/client');
       const supabase = createClient();
       const { error } = await supabase.auth.updateUser({
         password: newPass,
       });
 
       if (error) {
-        return { success: false, message: error.message };
+        // Fallback pelo backend caso o usuário esteja redefinindo via token
+        const res = await fetch('/api/users/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user?.id,
+            email: user?.email,
+            newPassword: newPass,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          return { success: false, message: data.message || error.message };
+        }
       }
 
-      return { success: true, message: 'Senha atualizada com sucesso!' };
-    } catch {
-      return { success: true, message: 'Senha alterada com sucesso.' };
+      return { success: true, message: 'Sua senha foi redefinida com sucesso!' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Erro ao alterar senha.' };
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    setCompany(null);
-    localStorage.removeItem('negociapro_user');
-    localStorage.removeItem('negociapro_company');
+  const logout = async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Erro ao chamar supabase.auth.signOut():', e);
+    } finally {
+      setUser(null);
+      setCompany(null);
+      localStorage.removeItem('negociapro_user');
+      localStorage.removeItem('negociapro_company');
+      localStorage.removeItem('negociapro_master_impersonated');
+    }
   };
 
   const updateCompany = (updated: Partial<Company>) => {
@@ -300,6 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         resetPassword,
         updateUserPassword,
+        resendConfirmation,
         logout,
         updateCompany,
         updateProfile,

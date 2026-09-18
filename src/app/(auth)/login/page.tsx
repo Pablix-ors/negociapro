@@ -1,33 +1,75 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { TrendingUp, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { TrendingUp, Lock, Mail, ArrowRight, ShieldCheck, Eye, EyeOff, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
-  const { login } = useAuth();
+  const searchParams = useSearchParams();
+  const { login, resendConfirmation } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [showResend, setShowResend] = useState(false);
+
+  useEffect(() => {
+    const confirmed = searchParams.get('confirmed');
+    const err = searchParams.get('error');
+
+    if (confirmed === 'true') {
+      setSuccess('E-mail confirmado com sucesso! Digite sua senha para acessar sua conta.');
+    } else if (err === 'expired_link') {
+      setError('Este link expirou. Solicite um novo link abaixo.');
+      setShowResend(true);
+    } else if (err === 'invalid_link' || err === 'invalid_token') {
+      setError('Link de confirmação inválido ou já utilizado.');
+      setShowResend(true);
+    }
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    if (loading || !email || !password) return;
+
     setLoading(true);
     setError(null);
+    setSuccess(null);
+    setShowResend(false);
 
     const result = await login(email, password);
+
     if (result.success) {
       router.push('/dashboard');
     } else {
       setError(result.message || 'E-mail ou senha incorretos.');
+      if (result.needsEmailConfirmation) {
+        setShowResend(true);
+      }
       setLoading(false);
     }
+  };
+
+  const handleResend = async () => {
+    if (!email || resending) return;
+    setResending(true);
+    setError(null);
+    setSuccess(null);
+
+    const res = await resendConfirmation(email);
+    if (res.success) {
+      setSuccess(res.message || 'Novo link enviado com sucesso para seu e-mail!');
+    } else {
+      setError(res.message || 'Não foi possível reenviar o link no momento.');
+    }
+    setResending(false);
   };
 
   return (
@@ -56,9 +98,32 @@ export default function LoginPage() {
             Acesse o Sistema Comercial
           </h2>
 
+          {success && (
+            <div className="p-3.5 mb-5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-xs text-emerald-300 font-semibold flex items-start space-x-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <span>{success}</span>
+            </div>
+          )}
+
           {error && (
-            <div className="p-3.5 mb-5 rounded-xl bg-rose-950/80 border border-rose-800 text-xs text-rose-300 font-semibold animate-in fade-in">
-              {error}
+            <div className="p-3.5 mb-5 rounded-xl bg-rose-950/80 border border-rose-800 text-xs text-rose-300 font-semibold flex items-start space-x-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span>{error}</span>
+                {showResend && (
+                  <div className="mt-2.5 pt-2 border-t border-rose-800/60">
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={resending}
+                      className="inline-flex items-center space-x-1.5 text-xs text-rose-200 underline hover:text-white font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
+                      <span>{resending ? 'Reenviando...' : 'Reenviar e-mail de confirmação'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -70,10 +135,11 @@ export default function LoginPage() {
                 <input
                   type="email"
                   required
+                  disabled={loading}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="vendedor@empresa.com.br"
-                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
             </div>
@@ -90,12 +156,14 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  disabled={loading}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={() => setShowPassword(!showPassword)}
                   title={showPassword ? 'Ocultar senha' : 'Ver senha'}
                   className="p-1 text-slate-400 hover:text-slate-200 absolute right-3 top-1/2 -translate-y-1/2 rounded-lg transition-colors cursor-pointer"
@@ -131,5 +199,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white text-xs">Carregando...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

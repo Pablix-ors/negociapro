@@ -183,7 +183,7 @@ export default function ProfissionaisPage() {
             localStorage.setItem('negociapro_users_list', JSON.stringify(filtered));
           } catch {}
 
-          // Provisionar oficialmente no Supabase Auth + profiles table + enviar e-mail via Resend
+          // Enviar convite oficial pelo Supabase Auth via Brevo SMTP
           try {
             const res = await fetch('/api/auth/convite', {
               method: 'POST',
@@ -193,7 +193,6 @@ export default function ProfissionaisPage() {
                 email: email.trim(),
                 phone: phone || '',
                 role: loginRole,
-                tempPassword,
                 companyId: targetCompanyId,
                 companyName: targetCompanyName,
               }),
@@ -201,19 +200,19 @@ export default function ProfissionaisPage() {
 
             const data = await res.json();
             if (!res.ok && !data.success) {
-              console.warn('Aviso ao provisionar credencial no backend:', data.message);
+              console.warn('Aviso ao enviar convite:', data.message);
             }
+
+            // Abrir modal de confirmação do convite enviado
+            setCredentialsModal({
+              name,
+              email: email.trim(),
+              role: loginRole,
+              tempPass: 'Convite enviado por e-mail (o profissional definirá a própria senha)',
+            });
           } catch (apiErr) {
             console.error('Erro na chamada da rota /api/auth/convite:', apiErr);
           }
-
-          // Abrir modal com as credenciais geradas (WhatsApp / Copiar dados)
-          setCredentialsModal({
-            name,
-            email: email.trim(),
-            role: loginRole,
-            tempPass: tempPassword || '123456',
-          });
         }
       }
 
@@ -656,7 +655,7 @@ export default function ProfissionaisPage() {
                   </label>
 
                   {enableLoginAccess && (
-                    <div className="pt-2 border-t border-blue-100/80 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="pt-2 border-t border-blue-100/80 space-y-2">
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Nível de Permissão
@@ -671,29 +670,9 @@ export default function ProfissionaisPage() {
                           <option value="ADMIN">Administrador</option>
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Senha Inicial Provisória
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showTempPass ? 'text' : 'password'}
-                            value={tempPassword}
-                            onChange={(e) => setTempPassword(e.target.value)}
-                            placeholder="123456"
-                            className="w-full bg-white border border-blue-200 rounded-xl pl-8 pr-10 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                          />
-                          <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                          <button
-                            type="button"
-                            onClick={() => setShowTempPass(!showTempPass)}
-                            title={showTempPass ? 'Ocultar senha' : 'Ver senha'}
-                            className="p-1 text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2 rounded-lg transition-colors"
-                          >
-                            {showTempPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
+                      <p className="text-[11px] text-blue-700 bg-blue-100/60 p-2.5 rounded-xl border border-blue-200">
+                        Um convite oficial do <strong>Supabase Auth</strong> será enviado para o e-mail informado. O próprio colaborador definirá sua senha pessoal com total segurança.
+                      </p>
                     </div>
                   )}
                 </div>

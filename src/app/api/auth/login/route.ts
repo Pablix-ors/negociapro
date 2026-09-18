@@ -28,16 +28,50 @@ export async function POST(request: Request) {
       password: password,
     });
 
+    // Se houve erro no Supabase Auth
     if (authError || !authData.user) {
+      const errMsg = authError?.message?.toLowerCase() || '';
+
+      if (errMsg.includes('email not confirmed') || errMsg.includes('not confirmed')) {
+        return NextResponse.json(
+          {
+            success: false,
+            needsEmailConfirmation: true,
+            message: 'Confirme seu e-mail antes de acessar sua conta. Enviamos um link de ativação para você.',
+          },
+          { status: 403 }
+        );
+      }
+
+      if (errMsg.includes('invalid login credentials') || errMsg.includes('invalid credentials')) {
+        return NextResponse.json(
+          { success: false, message: 'E-mail ou senha incorretos. Verifique os dados digitados.' },
+          { status: 401 }
+        );
+      }
+
       return NextResponse.json(
-        { success: false, message: 'E-mail ou senha incorretos. Verifique os dados digitados.' },
+        { success: false, message: 'E-mail ou senha incorretos.' },
         { status: 401 }
       );
     }
 
     const user = authData.user;
 
-    // 2. Buscar perfil correspondente na tabela profiles (por id ou por e-mail)
+    // 2. Verificar se a política do sistema exige e-mail confirmado
+    // Se não tiver confirmação de e-mail registrada:
+    if (!user.email_confirmed_at && user.confirmed_at === null) {
+      return NextResponse.json(
+        {
+          success: false,
+          needsEmailConfirmation: true,
+          message: 'Confirme seu e-mail antes de acessar sua conta.',
+        },
+        { status: 403 }
+      );
+    }
+
+    // 3. Buscar perfil correspondente na tabela profiles
     let { data: profile } = await supabase
       .from('profiles')
       .select('*')
@@ -53,7 +87,6 @@ export async function POST(request: Request) {
 
       if (profileByEmail) {
         profile = profileByEmail;
-        // Atualizar id do perfil para bater com user.id
         await supabase
           .from('profiles')
           .update({ id: user.id, updated_at: new Date().toISOString() })
@@ -61,9 +94,17 @@ export async function POST(request: Request) {
       }
     }
 
+    // Verificar se o usuário está desativado
+    if (profile && profile.active === false) {
+      return NextResponse.json(
+        { success: false, message: 'Este usuário está desativado. Entre em contato com o administrador da sua empresa.' },
+        { status: 403 }
+      );
+    }
+
     let company = null;
 
-    // 3. Se achou perfil com company_id, buscar a empresa
+    // 4. Buscar empresa vinculada
     if (profile?.company_id) {
       const { data: comp } = await supabase
         .from('companies')
@@ -73,7 +114,6 @@ export async function POST(request: Request) {
       company = comp;
     }
 
-    // Se o metadata do usuário tiver company_id e ainda não achou a empresa
     if (!company && user.user_metadata?.company_id) {
       const { data: compByMeta } = await supabase
         .from('companies')
@@ -85,7 +125,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Se ainda não encontrou empresa pelo profile, busca diretamente na tabela companies pelo e-mail
     if (!company) {
       const { data: compByEmail } = await supabase
         .from('companies')
@@ -95,7 +134,6 @@ export async function POST(request: Request) {
       
       if (compByEmail) {
         company = compByEmail;
-        // Cria ou atualiza o perfil vinculado a esta empresa
         await supabase.from('profiles').upsert({
           id: user.id,
           company_id: compByEmail.id,
@@ -107,34 +145,29 @@ export async function POST(request: Request) {
       }
     }
 
-    // Se mesmo assim não achou empresa, criar uma empresa padrão com o nome do metadata
-    if (!company) {
-      const companyName = user.user_metadata?.company_name || 'Minha Empresa';
-      const { data: newComp, error: newCompErr } = await supabase
-        .from('companies')
-        .insert([{
-          name: companyName,
-          trade_name: companyName,
-          email: cleanEmail,
-          status: 'ATIVO',
-        }])
-        .select()
-        .single();
-
-      if (!newCompErr && newComp) {
-        company = newComp;
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          company_id: newComp.id,
-          name: user.user_metadata?.full_name || cleanEmail.split('@')[0],
-          email: cleanEmail,
-          role: user.user_metadata?.role || 'ADMIN',
-          active: true,
-        });
+    // 5. Verificar se o estabelecimento está desativado ou bloqueado
+    if (company) {
+      if (company.status === 'BLOQUEADO') {
+        return NextResponse.json(
+          {
+            success: false,
+            isCompanyBlocked: true,
+            message: `O acesso do estabelecimento ${company.name} está bloqueado pela administração. Motivo: ${company.blocked_reason || 'Consulte o suporte.'}`,
+          },
+          { status: 403 }
+        );
+      }
+      if (company.status === 'INATIVO') {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `O estabelecimento ${company.name} encontra-se inativo.`,
+          },
+          { status: 403 }
+        );
       }
     }
 
-    // Determinar a role final de forma segura respeitando profissionais/vendedores
     const resolvedRole = profile?.role || user.user_metadata?.role || 'VENDEDOR';
     const resolvedName = profile?.name || user.user_metadata?.full_name || cleanEmail.split('@')[0];
 
@@ -153,11 +186,12 @@ export async function POST(request: Request) {
       success: true,
       user: finalProfile,
       company: company,
+      session: authData.session,
     });
   } catch (err: any) {
     console.error('Erro na rota de login:', err);
     return NextResponse.json(
-      { success: false, message: err?.message || 'Erro interno ao processar login.' },
+      { success: false, message: 'Não foi possível conectar ao servidor. Tente novamente.' },
       { status: 500 }
     );
   }

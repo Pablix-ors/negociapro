@@ -79,18 +79,43 @@ export default function UsuariosConfigPage() {
     localStorage.setItem(tenantStorageKey, JSON.stringify(newList));
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newEmail || !newEmail.includes('@')) return;
+
+    const targetCompanyId = company?.id || user?.company_id || 'demo-company';
+    const targetCompanyName = company?.trade_name || company?.name || 'Minha Empresa';
+
     const newUser: Profile = {
       id: `usr-${Date.now()}`,
-      company_id: user?.company_id || 'demo-company',
-      name: newName,
-      email: newEmail,
+      company_id: targetCompanyId,
+      name: newName || newEmail.split('@')[0],
+      email: newEmail.trim().toLowerCase(),
       role: newRole,
       active: true,
     };
     saveUsersState([...usersList, newUser]);
     setShowModal(false);
+
+    // Disparar convite oficial do Supabase Auth via Brevo SMTP
+    try {
+      await fetch('/api/auth/convite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newName,
+          email: newEmail.trim(),
+          role: newRole,
+          companyId: targetCompanyId,
+          companyName: targetCompanyName,
+        }),
+      });
+      setFeedbackMessage({ type: 'success', text: `Convite enviado com sucesso para ${newEmail}!` });
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (err) {
+      console.error('Erro ao enviar convite:', err);
+    }
+
     setNewName('');
     setNewEmail('');
   };

@@ -13,7 +13,7 @@ export default function RecuperarSenhaPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    if (loading || !email) return;
 
     setLoading(true);
     setStatus(null);
@@ -23,17 +23,13 @@ export default function RecuperarSenhaPage() {
     if (res.success) {
       setStatus({
         type: 'success',
-        message: res.message || 'Link de recuperação enviado com sucesso! Você também pode redefinir agora.',
+        message: res.message || 'Enviamos um link seguro de recuperação para seu e-mail. Verifique sua caixa de entrada.',
       });
     } else {
-      // Se o envio falhou (por exemplo rate limit do e-mail), permitir que o usuário redefina diretamente
       setStatus({
-        type: 'success',
-        message: 'Solicitação registrada! Redirecionando para a tela de definição de nova senha...',
+        type: 'error',
+        message: res.message || 'Não foi possível enviar o e-mail de recuperação. Tente novamente.',
       });
-      setTimeout(() => {
-        window.location.href = `/redefinir-senha?email=${encodeURIComponent(email)}`;
-      }, 2000);
     }
     setLoading(false);
   };
@@ -96,10 +92,11 @@ export default function RecuperarSenhaPage() {
                 <input
                   type="email"
                   required
+                  disabled={loading}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="vendedor@empresa.com.br"
-                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
             </div>
@@ -107,7 +104,7 @@ export default function RecuperarSenhaPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 active:scale-98 flex items-center justify-center space-x-2"
+              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 active:scale-98 flex items-center justify-center space-x-2 cursor-pointer"
             >
               <span>{loading ? 'Enviando link...' : 'Enviar Link de Redefinição'}</span>
               <ArrowRight className="w-4 h-4" />
