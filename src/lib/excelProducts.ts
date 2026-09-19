@@ -123,6 +123,16 @@ export function validateImportedProducts(
   const existingSkuMap = new Map<string, string>();
   existingProducts.forEach((p) => { if (p.sku) existingSkuMap.set(p.sku, p.id); });
 
+  /**
+   * Converte valor do Excel para número, aceitando tanto
+   * ponto (exportações antigas) quanto vírgula (exportações novas em pt-BR).
+   */
+  const parseNum = (raw: any, fallback = 0): number => {
+    if (raw == null || raw === '') return fallback;
+    const n = Number(String(raw).replace(',', '.'));
+    return isNaN(n) ? fallback : n;
+  };
+
   rows.forEach((row, index) => {
     const rowNumber = index + 2; // Linha 1 é o cabeçalho
 
@@ -142,22 +152,23 @@ export function validateImportedProducts(
     const brand = String(row['Marca'] || row['marca'] || '').trim();
 
     // Preços — aceita colunas com * (modelo) e sem * (exportado)
+    // parseNum aceita tanto ponto (export antigo) quanto vírgula (export pt-BR)
     const rawCost  = row['Preço Custo (R$) *']  ?? row['Preço Custo (R$)']  ?? row['Preço Custo']  ?? row['cost_price']  ?? 0;
     const rawSell  = row['Preço Venda (R$) *']  ?? row['Preço Venda (R$)']  ?? row['Preço Venda']  ?? row['selling_price'] ?? 0;
     const rawMin   = row['Preço Mínimo (R$) *'] ?? row['Preço Mínimo (R$)'] ?? row['Preço Mínimo'] ?? row['min_price'];
     const rawStock = row['Estoque Atual *']      ?? row['Estoque Atual']     ?? row['current_stock'] ?? 0;
     const rawMin2  = row['Estoque Mínimo *']     ?? row['Estoque Mínimo']    ?? row['min_stock']     ?? 0;
 
-    const costPrice    = Number(rawCost);
-    const sellingPrice = Number(rawSell);
-    const currentStock = Number(rawStock);
-    const minStock     = Number(rawMin2);
-    const minPrice     = rawMin != null ? Number(rawMin) : sellingPrice;
+    const costPrice    = parseNum(rawCost);
+    const sellingPrice = parseNum(rawSell);
+    const currentStock = parseNum(rawStock);
+    const minStock     = parseNum(rawMin2);
+    const minPrice     = rawMin != null ? parseNum(rawMin, sellingPrice) : sellingPrice;
 
     const rawCommType = String(
       row['Tipo de Comissão'] || row['Tipo Comissão'] || ''
     ).trim().toUpperCase();
-    const rawCommVal = Number(row['Valor da Comissão'] || row['Valor Comissão'] || 0);
+    const rawCommVal = parseNum(row['Valor da Comissão'] ?? row['Valor Comissão'] ?? 0);
 
     let commissionType: 'NONE' | 'PERCENTAGE' | 'FIXED' = 'NONE';
     if (rawCommType.includes('PERC') || rawCommType === '%') {
@@ -236,6 +247,19 @@ export function validateImportedProducts(
 }
 
 // 3. Exportação de produtos para Excel (.xlsx) ou CSV
+/**
+ * Formata número para o padrão brasileiro:
+ * - Inteiros (sem casa decimal): exporta como número puro  → 8, 10, 100
+ * - Decimais: usa vírgula como separador decimal           → 8,88  29,91
+ * Isso permite que o Excel (configurado em pt-BR) reconheça como número
+ * e aceite fórmulas normalmente.
+ */
+function fmtNum(value: number): number | string {
+  if (Number.isInteger(value)) return value; // inteiro puro → Excel trata como número
+  // Decimal → string com vírgula (separador BR)
+  return value.toFixed(2).replace('.', ',');
+}
+
 export function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv') {
   const exportData = products.map((p) => ({
     'ID (não editar)': p.id,          // usado na reimportação para garantir match correto
@@ -244,15 +268,16 @@ export function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv'
     'Código de Barras': p.barcode || '',
     'Unidade': p.unit,
     'Marca': p.brand || '',
-    'Preço Custo (R$)': p.cost_price.toFixed(2),
-    'Preço Venda (R$)': p.selling_price.toFixed(2),
-    'Preço Mínimo (R$)': p.min_price.toFixed(2),
+    'Preço Custo (R$)': fmtNum(p.cost_price),
+    'Preço Venda (R$)': fmtNum(p.selling_price),
+    'Preço Mínimo (R$)': fmtNum(p.min_price),
     'Estoque Atual': p.current_stock,
     'Estoque Mínimo': p.min_stock,
     'Tipo de Comissão': p.commission_type === 'PERCENTAGE' ? 'PERCENTUAL' : p.commission_type === 'FIXED' ? 'FIXO' : 'SEM COMISSAO',
-    'Valor da Comissão': p.commission_value || 0,
+    'Valor da Comissão': fmtNum(p.commission_value || 0),
     'Status': p.active ? 'ATIVO' : 'INATIVO',
   }));
+
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(exportData);
