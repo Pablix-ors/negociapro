@@ -148,8 +148,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const savedCust = localStorage.getItem(`negociapro_customers${key}`);
       if (savedCust) {
         const parsedCust = JSON.parse(savedCust);
-        if (Array.isArray(parsedCust) && parsedCust.length > 0) {
-          setCustomers(parsedCust);
+        if (Array.isArray(parsedCust)) {
+          // Se for empresa real, filtra qualquer cliente de demo antigo que possa ter ficado no cache do navegador
+          const cleanCust = isDemo
+            ? parsedCust
+            : parsedCust.filter((c) => !c.id.startsWith('cust-0') && c.company_id === company?.id);
+          setCustomers(cleanCust);
         } else {
           setCustomers(isDemo ? DEMO_CUSTOMERS : []);
         }
@@ -254,7 +258,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedSales = localStorage.getItem(`negociapro_sales${key}`);
       if (savedSales) {
-        setSales(JSON.parse(savedSales));
+        const parsedSales = JSON.parse(savedSales);
+        if (Array.isArray(parsedSales)) {
+          const cleanSales = isDemo
+            ? parsedSales
+            : parsedSales.filter((s) => !String(s.id).startsWith('sale-0') && s.company_id === company?.id);
+          setSales(cleanSales);
+        } else {
+          setSales(isDemo ? DEMO_SALES : []);
+        }
       } else {
         setSales(isDemo ? DEMO_SALES : []);
       }
