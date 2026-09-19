@@ -98,28 +98,28 @@ export default function Topbar() {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-4 lg:px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs gap-2">
+      <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-4 lg:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs gap-2 sm:gap-3">
         {/* Busca Global (Trigger) */}
-        <div className="flex items-center space-x-3 flex-1 max-w-xs sm:max-w-xl">
+        <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0 max-w-xs sm:max-w-md lg:max-w-lg">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="flex-1 flex items-center justify-between px-2.5 sm:px-3.5 py-2 bg-slate-100/80 hover:bg-slate-200/60 text-slate-500 rounded-xl text-xs border border-slate-200 transition-all cursor-pointer group"
+            className="flex-1 flex items-center justify-between px-2.5 sm:px-3.5 py-2 bg-slate-100/80 hover:bg-slate-200/60 text-slate-500 rounded-xl text-xs border border-slate-200 transition-all cursor-pointer group min-w-0"
           >
-            <div className="flex items-center space-x-2 truncate">
+            <div className="flex items-center space-x-2 truncate min-w-0">
               <Search className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
               <span className="truncate hidden xs:inline sm:inline">Pesquisar clientes, produtos...</span>
               <span className="truncate inline xs:hidden sm:hidden">Buscar...</span>
             </div>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-white border border-slate-300 rounded text-slate-500 shadow-2xs shrink-0">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-white border border-slate-300 rounded text-slate-500 shadow-2xs shrink-0 ml-1">
               <Command className="w-3 h-3 mr-0.5" /> K
             </kbd>
           </button>
 
           {/* Identificação Visível da Empresa / Estabelecimento */}
-          <div className="hidden md:flex items-center space-x-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 shrink-0">
+          <div className="hidden xl:flex items-center space-x-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 shrink-0">
             <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="font-bold truncate max-w-[170px] lg:max-w-[220px]" title={company?.trade_name || company?.name || 'Estabelecimento'}>
+            <span className="font-bold truncate max-w-[160px] 2xl:max-w-[220px]" title={company?.trade_name || company?.name || 'Estabelecimento'}>
               {company?.trade_name || company?.name || 'Estabelecimento'}
             </span>
           </div>
@@ -236,18 +236,18 @@ export default function Topbar() {
           <div className="h-6 w-px bg-slate-200" />
 
           {/* Perfil do Usuário */}
-          <div className="relative" ref={profileRef}>
+          <div className="relative shrink-0" ref={profileRef}>
             <button
               type="button"
               onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-              className={`flex items-center space-x-3 p-1.5 rounded-xl transition-colors text-left ${
+              className={`flex items-center space-x-2.5 p-1.5 rounded-xl transition-colors text-left max-w-[200px] sm:max-w-xs ${
                 isMasterImpersonating
                   ? 'hover:bg-amber-50/80 bg-amber-50/40 border border-amber-200/60'
                   : 'hover:bg-slate-100'
               }`}
             >
               <div
-                className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs ${
+                className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs shrink-0 ${
                   isMasterImpersonating
                     ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
                     : user?.role === 'ADMIN'
@@ -261,12 +261,12 @@ export default function Topbar() {
                   displayName.charAt(0).toUpperCase()
                 )}
               </div>
-              <div className="hidden md:block">
-                <span className="text-xs font-bold text-slate-800 block leading-tight">
+              <div className="hidden lg:block min-w-0">
+                <span className="text-xs font-bold text-slate-800 block leading-tight truncate" title={displayName}>
                   {displayName}
                 </span>
                 <span
-                  className={`text-[10px] font-bold uppercase tracking-wider block ${
+                  className={`text-[10px] font-bold uppercase tracking-wider block truncate ${
                     isMasterImpersonating
                       ? 'text-amber-600 font-black'
                       : user?.role === 'ADMIN'
