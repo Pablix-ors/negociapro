@@ -33,6 +33,22 @@ export default function ClientesPage() {
   // Modal de Exclusão de Cliente
   const [clientToDelete, setClientToDelete] = useState<Customer | null>(null);
 
+  // Sincronização de rolagem horizontal dupla (topo e rodapé)
+  const topScrollRef = React.useRef<HTMLDivElement>(null);
+  const bottomScrollRef = React.useRef<HTMLDivElement>(null);
+
+  const handleTopScroll = () => {
+    if (topScrollRef.current && bottomScrollRef.current) {
+      bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+
+  const handleBottomScroll = () => {
+    if (topScrollRef.current && bottomScrollRef.current) {
+      topScrollRef.current.scrollLeft = bottomScrollRef.current.scrollLeft;
+    }
+  };
+
   const safeCustomers = Array.isArray(customers) ? customers.filter(Boolean) : [];
 
   const filteredCustomers = safeCustomers.filter((c) => {
@@ -142,9 +158,23 @@ export default function ClientesPage() {
           </div>
         ) : (
           <>
+            {/* Barra de Rolagem Horizontal no Topo */}
+            <div
+              ref={topScrollRef}
+              onScroll={handleTopScroll}
+              className="hidden sm:block overflow-x-auto w-full max-w-full scrollbar-visible bg-slate-100/70 border-b border-slate-200 py-1 px-4"
+              title="Barra de rolagem horizontal rápida (arraste para navegar)"
+            >
+              <div className="min-w-[1100px] h-[1px]" />
+            </div>
+
             {/* Tabela com Scroll Horizontal Garantido */}
-            <div className="hidden sm:block overflow-x-auto w-full max-w-full pb-3 scrollbar-visible">
-              <table className="w-full text-left text-xs min-w-[1050px]">
+            <div
+              ref={bottomScrollRef}
+              onScroll={handleBottomScroll}
+              className="hidden sm:block overflow-x-auto w-full max-w-full pb-4 scrollbar-visible"
+            >
+              <table className="w-full text-left text-xs min-w-[1100px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Cliente / Razão Social</th>

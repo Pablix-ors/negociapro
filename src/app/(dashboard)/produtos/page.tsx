@@ -70,6 +70,22 @@ export default function ProdutosPage() {
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Refs para sincronização de rolagem horizontal superior e inferior
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const bottomScrollRef = useRef<HTMLDivElement>(null);
+
+  const handleTopScroll = () => {
+    if (topScrollRef.current && bottomScrollRef.current) {
+      bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+
+  const handleBottomScroll = () => {
+    if (topScrollRef.current && bottomScrollRef.current) {
+      topScrollRef.current.scrollLeft = bottomScrollRef.current.scrollLeft;
+    }
+  };
+
   // Fecha o dropdown de exportação ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -582,8 +598,22 @@ export default function ProdutosPage() {
           </div>
         ) : (
           <>
+            {/* Barra de Rolagem Horizontal no Topo (Diretamente visível sem precisar rolar até o fim) */}
+            <div
+              ref={topScrollRef}
+              onScroll={handleTopScroll}
+              className="hidden sm:block overflow-x-auto w-full max-w-full scrollbar-visible bg-slate-100/70 border-b border-slate-200 py-1 px-4"
+              title="Barra de rolagem horizontal rápida (arraste para ver todas as colunas)"
+            >
+              <div className="min-w-[1200px] h-[1px]" />
+            </div>
+
             {/* Tabela com Scroll Horizontal Garantido em qualquer resolução */}
-            <div className="hidden sm:block overflow-x-auto w-full max-w-full pb-4 scrollbar-visible">
+            <div
+              ref={bottomScrollRef}
+              onScroll={handleBottomScroll}
+              className="hidden sm:block overflow-x-auto w-full max-w-full pb-4 scrollbar-visible"
+            >
               <table className="w-full text-left text-xs min-w-[1200px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
