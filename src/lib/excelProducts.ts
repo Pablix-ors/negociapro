@@ -115,7 +115,11 @@ export function validateImportedProducts(
   const errors: ImportErrorItem[] = [];
   const seenSkus = new Set<string>();
 
-  // Mapa de SKU → id para lookup rápido
+  // Mapa de ID → produto para lookup direto (mais confiável que SKU)
+  const existingIdMap = new Map<string, string>();
+  existingProducts.forEach((p) => existingIdMap.set(p.id, p.id));
+
+  // Mapa de SKU → id para fallback
   const existingSkuMap = new Map<string, string>();
   existingProducts.forEach((p) => { if (p.sku) existingSkuMap.set(p.sku, p.id); });
 
@@ -123,6 +127,8 @@ export function validateImportedProducts(
     const rowNumber = index + 2; // Linha 1 é o cabeçalho
 
     // Suporta tanto o modelo de importação (com *) quanto o arquivo exportado (sem *)
+    // ID do produto (coluna gerada pela exportação — identificação mais confiável)
+    const rowId = String(row['ID (não editar)'] || row['ID'] || '').trim();
     const name = String(
       row['Nome *'] || row['Nome'] || row['nome'] || ''
     ).trim();
@@ -170,8 +176,13 @@ export function validateImportedProducts(
       return;
     }
 
-    // Detecta se é uma atualização antes de validar preço
-    const isUpdate = sku !== '' && existingSkuMap.has(sku);
+    // Detecta se é uma atualização:
+    // 1º prioridade: ID direto (coluna 'ID (não editar)' gerada na exportação)
+    // 2º prioridade: SKU correspondente
+    const existingIdByRow = rowId && existingIdMap.has(rowId) ? rowId : null;
+    const existingIdBySku = sku !== '' && existingSkuMap.has(sku) ? existingSkuMap.get(sku)! : null;
+    const resolvedExistingId = existingIdByRow || existingIdBySku || null;
+    const isUpdate = resolvedExistingId !== null;
 
     // Para NOVOS produtos, preço de venda > 0 é obrigatório
     // Para ATUALIZAÇÕES, permite preço 0 (o produto já existe no sistema)
@@ -203,10 +214,9 @@ export function validateImportedProducts(
       image_url: null,
     };
 
-    // Se o SKU já existe no sistema → é uma atualização, não um novo produto
-    if (isUpdate) {
-      const existingId = existingSkuMap.get(sku)!;
-      updateProducts.push({ id: existingId, ...productData });
+    // Se o ID ou SKU já existe no sistema → é uma atualização
+    if (isUpdate && resolvedExistingId) {
+      updateProducts.push({ id: resolvedExistingId, ...productData });
       return;
     }
 
@@ -228,6 +238,7 @@ export function validateImportedProducts(
 // 3. Exportação de produtos para Excel (.xlsx) ou CSV
 export function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv') {
   const exportData = products.map((p) => ({
+    'ID (não editar)': p.id,          // usado na reimportação para garantir match correto
     'Nome': p.name,
     'SKU': p.sku || '',
     'Código de Barras': p.barcode || '',
@@ -245,6 +256,21 @@ export function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv'
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(exportData);
+
+  // Força as colunas de ID e SKU como texto puro para evitar que o Excel converta em número
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  for (let R = range.s.r + 1; R <= range.e.r; R++) {
+    // Coluna A = ID, Coluna C = SKU
+    ['A', 'C'].forEach((col) => {
+      const cellAddr = `${col}${R + 1}`;
+      if (ws[cellAddr] && ws[cellAddr].v !== undefined) {
+        ws[cellAddr].t = 's'; // força tipo string
+        ws[cellAddr].v = String(ws[cellAddr].v);
+        delete ws[cellAddr].z; // remove formatação numérica se houver
+      }
+    });
+  }
+
   XLSX.utils.book_append_sheet(wb, ws, 'Catálogo de Produtos');
 
   if (format === 'xlsx') {
