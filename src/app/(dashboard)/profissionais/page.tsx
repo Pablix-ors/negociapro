@@ -66,8 +66,12 @@ export default function ProfissionaisPage() {
     email: string;
     role: string;
     tempPass: string;
+    inviteUrl?: string;
+    emailSent?: boolean;
+    emailError?: string | null;
   } | null>(null);
   const [copiedText, setCopiedText] = useState(false);
+  const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
 
   // Campos do formulário
   const [name, setName] = useState('');
@@ -250,15 +254,25 @@ export default function ProfissionaisPage() {
               console.warn('Aviso ao enviar convite:', data.message);
             }
 
-            // Abrir modal de confirmação do convite enviado
+            // Abrir modal de confirmação do convite enviado com link de ativação
             setCredentialsModal({
               name,
               email: email.trim(),
               role: loginRole,
-              tempPass: 'Convite enviado por e-mail (o profissional definirá a própria senha)',
+              tempPass: 'Link de ativação (o profissional definirá a própria senha)',
+              inviteUrl: data.inviteUrl || '',
+              emailSent: data.emailSent ?? true,
+              emailError: data.emailError || null,
             });
           } catch (apiErr) {
             console.error('Erro na chamada da rota /api/auth/convite:', apiErr);
+            setCredentialsModal({
+              name,
+              email: email.trim(),
+              role: loginRole,
+              tempPass: 'Convite registrado',
+              emailSent: false,
+            });
           }
         }
       }
@@ -315,15 +329,31 @@ export default function ProfissionaisPage() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setFeedbackMessage({ type: 'success', text: `Convite reenviado com sucesso para ${prof.email} via Brevo!` });
+        setFeedbackMessage({
+          type: 'success',
+          text: data.emailSent
+            ? `Convite enviado por e-mail para ${prof.email}!`
+            : `Acesso gerado com sucesso! Use o link de ativação copiado ou WhatsApp.`,
+        });
+
+        // Também abrir o modal com o link gerado para envio imediato se desejar
+        setCredentialsModal({
+          name: prof.name,
+          email: prof.email.trim(),
+          role: prof.role_title || 'Profissional',
+          tempPass: 'Link de ativação oficial',
+          inviteUrl: data.inviteUrl || '',
+          emailSent: data.emailSent ?? true,
+          emailError: data.emailError || null,
+        });
       } else {
-        setFeedbackMessage({ type: 'error', text: data.message || 'Erro ao reenviar convite via Brevo.' });
+        setFeedbackMessage({ type: 'error', text: data.message || 'Erro ao processar convite.' });
       }
     } catch {
-      setFeedbackMessage({ type: 'error', text: 'Falha de comunicação ao reenviar convite.' });
+      setFeedbackMessage({ type: 'error', text: 'Falha de comunicação ao processar convite.' });
     } finally {
       setResendingEmail(null);
-      setTimeout(() => setFeedbackMessage(null), 4500);
+      setTimeout(() => setFeedbackMessage(null), 5000);
     }
   };
 
@@ -623,8 +653,13 @@ export default function ProfissionaisPage() {
 
       {/* Modal de Cadastro / Edição */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 my-8">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalOpen(false);
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto cursor-pointer"
+        >
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 my-8 cursor-default">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <h2 className="text-lg font-black text-slate-900">
                 {editingProf ? 'Editar Profissional' : 'Novo Profissional'}
@@ -860,8 +895,13 @@ export default function ProfissionaisPage() {
 
       {/* Modal de Sucesso com Acesso Criado e Envio por WhatsApp / Copiar */}
       {credentialsModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full rounded-2xl p-6 border border-slate-200 shadow-2xl space-y-4">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setCredentialsModal(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+        >
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 border border-slate-200 shadow-2xl space-y-4 cursor-default">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
                 <CheckCircle2 className="w-6 h-6" />
@@ -887,11 +927,43 @@ export default function ProfissionaisPage() {
                   {credentialsModal.role}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-slate-600 pt-1 border-t border-slate-200">
-                <span>Senha Provisória:</span>
-                <strong className="text-blue-600 font-mono text-sm">{credentialsModal.tempPass}</strong>
-              </div>
+              {credentialsModal.inviteUrl ? (
+                <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-700">Link Direto de Ativação / Senha:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(credentialsModal.inviteUrl || '');
+                        setCopiedInviteUrl(true);
+                        setTimeout(() => setCopiedInviteUrl(false), 2500);
+                      }}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 cursor-pointer"
+                    >
+                      {copiedInviteUrl ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedInviteUrl ? 'Copiado!' : 'Copiar Link'}</span>
+                    </button>
+                  </div>
+                  <div className="p-2 bg-white border border-slate-200 rounded-lg text-[10px] font-mono text-slate-700 break-all select-all">
+                    {credentialsModal.inviteUrl}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center text-slate-600 pt-1 border-t border-slate-200">
+                  <span>Senha / Acesso:</span>
+                  <strong className="text-blue-600 font-mono text-xs">{credentialsModal.tempPass}</strong>
+                </div>
+              )}
             </div>
+
+            {credentialsModal.emailSent === false && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start space-x-2">
+                <span className="shrink-0 text-sm">⚠️</span>
+                <span>
+                  O provedor de e-mail pode levar alguns minutos ou exigir validação de domínio. <strong>Envie o link direto acima por WhatsApp</strong> para o colaborador entrar imediatamente!
+                </span>
+              </div>
+            )}
 
             <p className="text-[11px] text-slate-500">
               💡 Para facilitar a entrada imediata do colaborador, você pode copiar os dados ou enviar direto no WhatsApp dele:
@@ -901,7 +973,8 @@ export default function ProfissionaisPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const msg = `Olá *${credentialsModal.name}*! 👋\n\nSeu acesso ao *NegociaPro* foi liberado com sucesso.\n\n🔗 *Link de Acesso:* ${typeof window !== 'undefined' ? window.location.origin : ''}/login\n📧 *Login:* ${credentialsModal.email}\n🔑 *Senha Inicial:* ${credentialsModal.tempPass}\n\nRecomendamos alterar sua senha no primeiro acesso!`;
+                  const accessUrl = credentialsModal.inviteUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/login`;
+                  const msg = `Olá *${credentialsModal.name}*! 👋\n\nSeu acesso ao *NegociaPro* foi liberado com sucesso.\n\n🔗 *Link Direto de Ativação / Definição de Senha:*\n${accessUrl}\n\n📧 *Login:* ${credentialsModal.email}\n\nClique no link para definir sua senha de acesso e começar a usar!`;
                   navigator.clipboard.writeText(msg);
                   setCopiedText(true);
                   setTimeout(() => setCopiedText(false), 2500);
@@ -915,7 +988,8 @@ export default function ProfissionaisPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const msg = encodeURIComponent(`Olá *${credentialsModal.name}*! 👋\n\nSeu acesso ao *NegociaPro* foi liberado com sucesso.\n\n🔗 *Link de Acesso:* ${typeof window !== 'undefined' ? window.location.origin : ''}/login\n📧 *Login:* ${credentialsModal.email}\n🔑 *Senha Inicial:* ${credentialsModal.tempPass}\n\nRecomendamos alterar sua senha no primeiro acesso!`);
+                  const accessUrl = credentialsModal.inviteUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/login`;
+                  const msg = encodeURIComponent(`Olá *${credentialsModal.name}*! 👋\n\nSeu acesso ao *NegociaPro* foi liberado com sucesso.\n\n🔗 *Link Direto de Ativação / Definição de Senha:*\n${accessUrl}\n\n📧 *Login:* ${credentialsModal.email}\n\nClique no link para definir sua senha de acesso e começar a usar!`);
                   window.open(`https://api.whatsapp.com/send?text=${msg}`, '_blank');
                 }}
                 className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-sm shadow-emerald-600/30 cursor-pointer"

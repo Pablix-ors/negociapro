@@ -106,7 +106,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation Links */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-6">
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-6 dark-scrollbar">
         <div>
           <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
             Comercial

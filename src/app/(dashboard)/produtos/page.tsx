@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { formatCurrency } from '@/lib/formatters';
@@ -68,6 +68,19 @@ export default function ProdutosPage() {
 
   // Estado do Dropdown de Exportação
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fecha o dropdown de exportação ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
+        setExportDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const filteredProducts = products.filter((p) => {
     const matchesQuery =
@@ -244,7 +257,7 @@ export default function ProdutosPage() {
           </button>
 
           {/* Exportar Produtos (Dropdown) */}
-          <div className="relative">
+          <div className="relative" ref={exportDropdownRef}>
             <button
               type="button"
               onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
@@ -569,9 +582,9 @@ export default function ProdutosPage() {
           </div>
         ) : (
           <>
-            {/* Tabela Desktop */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            {/* Tabela Desktop com Scroll Horizontal Garantido */}
+            <div className="hidden lg:block overflow-x-auto pb-2">
+              <table className="w-full text-left text-xs min-w-[960px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Produto</th>
@@ -805,7 +818,12 @@ export default function ProdutosPage() {
 
       {/* Modal de Importação de Produtos via Excel */}
       {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs overflow-y-auto">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setImportModalOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs overflow-y-auto"
+        >
           <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl p-6 border border-slate-200 animate-in fade-in zoom-in-95 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center space-x-2">
@@ -938,7 +956,12 @@ export default function ProdutosPage() {
 
       {/* Modal de Ajuste de Estoque (+ Entrada / - Saída) */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedProduct(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"
+        >
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-slate-100 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <div>

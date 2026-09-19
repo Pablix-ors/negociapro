@@ -504,8 +504,13 @@ export default function UsuariosConfigPage() {
 
       {/* Modal Confirmar Exclusão de Usuário */}
       {userToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-slate-100 space-y-4">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setUserToDelete(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-200 cursor-pointer"
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-slate-100 space-y-4 cursor-default">
             <div className="flex items-center space-x-3 text-rose-600">
               <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -562,8 +567,13 @@ export default function UsuariosConfigPage() {
 
       {/* Modal Convidar Usuário */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-slate-100">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs cursor-pointer"
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-slate-100 cursor-default">
             <h3 className="text-base font-bold text-slate-900 mb-4">Adicionar Novo Membro</h3>
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>

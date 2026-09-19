@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -47,6 +47,24 @@ export default function Topbar() {
   const [query, setQuery] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+
+  const profileRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  // Fecha os dropdowns ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setNotifDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Resultados da busca global
   const safeCustomersList = Array.isArray(customers) ? customers.filter(Boolean) : [];
@@ -122,7 +140,7 @@ export default function Topbar() {
           </Link>
 
           {/* Notificações Interativas com Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={notifRef}>
             <button
               type="button"
               onClick={() => {
@@ -218,7 +236,7 @@ export default function Topbar() {
           <div className="h-6 w-px bg-slate-200" />
 
           {/* Perfil do Usuário */}
-          <div className="relative">
+          <div className="relative" ref={profileRef}>
             <button
               type="button"
               onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}

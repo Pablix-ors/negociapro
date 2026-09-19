@@ -129,9 +129,9 @@ export default function VendasPage() {
           </div>
         ) : (
           <>
-            {/* Tabela Desktop */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            {/* Tabela Desktop com Scroll Horizontal Garantido */}
+            <div className="hidden lg:block overflow-x-auto pb-2">
+              <table className="w-full text-left text-xs min-w-[960px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Pedido</th>
@@ -285,10 +285,15 @@ export default function VendasPage() {
         )}
       </div>
 
-      {/* Modal Completo de Detalhes da Venda */}
+      {/* Modal de Detalhes da Venda */}
       {selectedSale && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl p-6 border border-slate-200 animate-in fade-in zoom-in-95 my-8">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedSale(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs overflow-y-auto cursor-pointer"
+        >
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl p-6 border border-slate-200 animate-in fade-in zoom-in-95 my-8 cursor-default">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <div className="flex items-center space-x-2">

@@ -142,9 +142,9 @@ export default function ClientesPage() {
           </div>
         ) : (
           <>
-            {/* Tabela Desktop */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            {/* Tabela Desktop com Scroll Horizontal Garantido */}
+            <div className="hidden lg:block overflow-x-auto pb-2">
+              <table className="w-full text-left text-xs min-w-[960px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Cliente / Razão Social</th>
@@ -307,8 +307,13 @@ export default function ClientesPage() {
 
       {/* Modal de Confirmação de Exclusão de Cliente */}
       {clientToDelete && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200/90 space-y-4 animate-in zoom-in-95">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setClientToDelete(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in cursor-pointer"
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200/90 space-y-4 animate-in zoom-in-95 cursor-default">
             <div className="flex items-start space-x-3.5">
               <div className="p-3 rounded-xl bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
                 <AlertTriangle className="w-6 h-6" />

@@ -140,8 +140,23 @@ export async function POST(request: Request) {
       ]);
     }
 
-    // 5. Gerar link oficial de convite do Supabase Auth
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // 5. Gerar link oficial de acesso / convite do Supabase Auth
+    // Detectar a URL base de produção ou request dinamicamente
+    const requestOrigin = request.headers.get('origin') || request.headers.get('referer');
+    let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    if (requestOrigin) {
+      try {
+        const parsed = new URL(requestOrigin);
+        appUrl = parsed.origin;
+      } catch {}
+    } else if (process.env.VERCEL_URL) {
+      appUrl = `https://${process.env.VERCEL_URL}`;
+    }
+
+    let hashedToken = '';
+    let inviteUrl = '';
+
+    // Tentar gerar link do tipo 'invite'
     const { data: inviteLinkData, error: inviteLinkErr } = await supabase.auth.admin.generateLink({
       type: 'invite',
       email: cleanEmail,
@@ -150,8 +165,28 @@ export async function POST(request: Request) {
       },
     });
 
-    const hashedToken = inviteLinkData?.properties?.hashed_token || '';
-    const inviteUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=invite`;
+    if (inviteLinkData?.properties?.hashed_token) {
+      hashedToken = inviteLinkData.properties.hashed_token;
+      inviteUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=invite`;
+    } else {
+      // Se o usuário já existia/já foi confirmado, 'invite' pode falhar com 'email_exists'.
+      // Usamos fallback com link de recuperação de acesso seguro (recovery)
+      const { data: recoveryData, error: recoveryErr } = await supabase.auth.admin.generateLink({
+        type: 'recovery',
+        email: cleanEmail,
+        options: {
+          redirectTo: `${appUrl}/redefinir-senha?email=${encodeURIComponent(cleanEmail)}&type=recovery`,
+        },
+      });
+
+      if (recoveryData?.properties?.hashed_token) {
+        hashedToken = recoveryData.properties.hashed_token;
+        inviteUrl = `${appUrl}/auth/confirm?token_hash=${hashedToken}&type=recovery`;
+      } else {
+        // Fallback final direto para a página de redefinição/login
+        inviteUrl = `${appUrl}/redefinir-senha?email=${encodeURIComponent(cleanEmail)}&type=invite`;
+      }
+    }
 
     // 6. Enviar e-mail de convite com link oficial via Brevo SMTP
     const emailHtml = getInviteProfessionalTemplate({
@@ -175,7 +210,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Convite enviado com sucesso para ${cleanEmail}! O colaborador definirá sua própria senha pelo link recebido.`,
+      emailSent: sendRes.success,
+      emailError: sendRes.success ? null : sendRes.error,
+      message: sendRes.success
+        ? `Convite enviado com sucesso para ${cleanEmail}! O colaborador definirá sua própria senha pelo link recebido.`
+        : `Acesso criado com sucesso! O e-mail automático pelo Brevo pode levar alguns instantes ou exigir liberação de MX. Você pode copiar o link direto de ativação abaixo ou enviar via WhatsApp!`,
       inviteUrl,
     });
   } catch (error: any) {
