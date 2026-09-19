@@ -32,6 +32,8 @@ import {
   Image as ImageIcon,
   DollarSign,
   Percent,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 
 export default function ProdutosPage() {
@@ -39,6 +41,15 @@ export default function ProdutosPage() {
   const [filterQuery, setFilterQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'NORMAL'>('ALL');
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+
+  // Filtros avançados
+  const [brandFilter, setBrandFilter] = useState('');
+  const [commissionFilter, setCommissionFilter] = useState<'ALL' | 'NONE' | 'PERCENTAGE' | 'FIXED'>('ALL');
+  const [minPriceFilter, setMinPriceFilter] = useState('');
+  const [maxPriceFilter, setMaxPriceFilter] = useState('');
+  const [minStockFilter, setMinStockFilter] = useState('');
+  const [maxStockFilter, setMaxStockFilter] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Estado do Modal de Ajuste de Estoque
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -75,8 +86,41 @@ export default function ProdutosPage() {
       (activeFilter === 'ACTIVE' && p.active) ||
       (activeFilter === 'INACTIVE' && !p.active);
 
-    return matchesQuery && matchesStock && matchesActive;
+    // Filtros avançados
+    const matchesBrand = !brandFilter || (p.brand || '').toLowerCase().includes(brandFilter.toLowerCase());
+    const matchesCommission = commissionFilter === 'ALL' || p.commission_type === commissionFilter;
+    const matchesMinPrice = !minPriceFilter || p.selling_price >= Number(minPriceFilter);
+    const matchesMaxPrice = !maxPriceFilter || p.selling_price <= Number(maxPriceFilter);
+    const matchesMinStock = !minStockFilter || p.current_stock >= Number(minStockFilter);
+    const matchesMaxStock = !maxStockFilter || p.current_stock <= Number(maxStockFilter);
+
+    return matchesQuery && matchesStock && matchesActive &&
+      matchesBrand && matchesCommission &&
+      matchesMinPrice && matchesMaxPrice &&
+      matchesMinStock && matchesMaxStock;
   });
+
+  // Marcas únicas para o dropdown de filtro
+  const allBrands = Array.from(new Set(products.map((p) => p.brand).filter(Boolean) as string[])).sort();
+
+  // Contagem de filtros avançados ativos
+  const advancedFilterCount = [
+    brandFilter, commissionFilter !== 'ALL' ? commissionFilter : '',
+    minPriceFilter, maxPriceFilter, minStockFilter, maxStockFilter,
+    activeFilter !== 'ALL' ? activeFilter : '',
+  ].filter(Boolean).length;
+
+  const resetAllFilters = () => {
+    setFilterQuery('');
+    setStockFilter('ALL');
+    setActiveFilter('ALL');
+    setBrandFilter('');
+    setCommissionFilter('ALL');
+    setMinPriceFilter('');
+    setMaxPriceFilter('');
+    setMinStockFilter('');
+    setMaxStockFilter('');
+  };
 
   // Estatísticas rápidas de estoque
   const totalStockItems = products.reduce((acc, p) => acc + p.current_stock, 0);
@@ -296,49 +340,223 @@ export default function ProdutosPage() {
       </div>
 
       {/* Barra de Filtros e Busca */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Buscar por nome do produto, SKU ou marca..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs space-y-3 p-4">
+        {/* Linha 1: Busca + botões de ação */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="Buscar por nome do produto, SKU ou marca..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Botão Filtros Avançados */}
             <button
               type="button"
-              onClick={() => setStockFilter('ALL')}
-              className={`px-3 py-1 rounded-lg transition-all ${
-                stockFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
+              onClick={() => setShowAdvancedFilters((v) => !v)}
+              className={`inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                showAdvancedFilters || advancedFilterCount > 0
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
+                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
               }`}
             >
-              Todos ({products.length})
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>Filtros</span>
+              {advancedFilterCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-white text-blue-700 rounded-full text-[10px] font-black">
+                  {advancedFilterCount}
+                </span>
+              )}
             </button>
-            <button
-              type="button"
-              onClick={() => setStockFilter('LOW')}
-              className={`px-3 py-1 rounded-lg transition-all ${
-                stockFilter === 'LOW' ? 'bg-white text-red-700 shadow-xs font-bold' : 'hover:text-slate-900'
-              }`}
-            >
-              Crítico ({lowStockCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStockFilter('NORMAL')}
-              className={`px-3 py-1 rounded-lg transition-all ${
-                stockFilter === 'NORMAL' ? 'bg-white text-emerald-700 shadow-xs font-bold' : 'hover:text-slate-900'
-              }`}
-            >
-              Regular ({products.length - lowStockCount})
-            </button>
+
+            {/* Filtro rápido estoque */}
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setStockFilter('ALL')}
+                className={`px-3 py-1 rounded-lg transition-all ${
+                  stockFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockFilter('LOW')}
+                className={`px-3 py-1 rounded-lg transition-all ${
+                  stockFilter === 'LOW' ? 'bg-white text-red-700 shadow-xs font-bold' : 'hover:text-slate-900'
+                }`}
+              >
+                Crítico ({lowStockCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockFilter('NORMAL')}
+                className={`px-3 py-1 rounded-lg transition-all ${
+                  stockFilter === 'NORMAL' ? 'bg-white text-emerald-700 shadow-xs font-bold' : 'hover:text-slate-900'
+                }`}
+              >
+                Regular
+              </button>
+            </div>
+
+            {/* Resultado + limpar */}
+            <span className="text-xs text-slate-500 font-semibold">
+              {filteredProducts.length} de {products.length}
+            </span>
+            {(filterQuery || stockFilter !== 'ALL' || advancedFilterCount > 0) && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 text-xs font-bold hover:bg-red-100 transition-all"
+                title="Limpar todos os filtros"
+              >
+                <X className="w-3 h-3" />
+                <span>Limpar</span>
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Painel de Filtros Avançados */}
+        {showAdvancedFilters && (
+          <div className="border-t border-slate-100 pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {/* Marca / Fabricante */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Marca / Fabricante</label>
+              <select
+                value={brandFilter}
+                onChange={(e) => setBrandFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todas as marcas</option>
+                {allBrands.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tipo de Comissão */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Comissão</label>
+              <select
+                value={commissionFilter}
+                onChange={(e) => setCommissionFilter(e.target.value as any)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ALL">Qualquer</option>
+                <option value="NONE">Sem comissão</option>
+                <option value="PERCENTAGE">Percentual (%)</option>
+                <option value="FIXED">Valor fixo (R$)</option>
+              </select>
+            </div>
+
+            {/* Status Ativo/Inativo */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
+              <select
+                value={activeFilter}
+                onChange={(e) => setActiveFilter(e.target.value as any)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ALL">Todos</option>
+                <option value="ACTIVE">Apenas Ativos</option>
+                <option value="INACTIVE">Apenas Inativos</option>
+              </select>
+            </div>
+
+            {/* Faixa de Preço de Venda */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preço de Venda (R$)</label>
+              <div className="flex items-center space-x-1.5">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={minPriceFilter}
+                  onChange={(e) => setMinPriceFilter(e.target.value)}
+                  placeholder="Mín"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-slate-400 text-xs font-bold shrink-0">até</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={maxPriceFilter}
+                  onChange={(e) => setMaxPriceFilter(e.target.value)}
+                  placeholder="Máx"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Faixa de Estoque */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estoque Atual (Qtd)</label>
+              <div className="flex items-center space-x-1.5">
+                <input
+                  type="number"
+                  min="0"
+                  value={minStockFilter}
+                  onChange={(e) => setMinStockFilter(e.target.value)}
+                  placeholder="Mín"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-slate-400 text-xs font-bold shrink-0">até</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={maxStockFilter}
+                  onChange={(e) => setMaxStockFilter(e.target.value)}
+                  placeholder="Máx"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Chips dos filtros ativos */}
+            {advancedFilterCount > 0 && (
+              <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4 flex flex-wrap gap-1.5 pt-1">
+                {brandFilter && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full text-[11px] font-bold">
+                    <span>Marca: {brandFilter}</span>
+                    <button onClick={() => setBrandFilter('')}><X className="w-3 h-3" /></button>
+                  </span>
+                )}
+                {commissionFilter !== 'ALL' && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-bold">
+                    <span>Comissão: {commissionFilter === 'NONE' ? 'Sem' : commissionFilter === 'PERCENTAGE' ? '%' : 'Fixo'}</span>
+                    <button onClick={() => setCommissionFilter('ALL')}><X className="w-3 h-3" /></button>
+                  </span>
+                )}
+                {activeFilter !== 'ALL' && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-purple-100 text-purple-800 rounded-full text-[11px] font-bold">
+                    <span>Status: {activeFilter === 'ACTIVE' ? 'Ativos' : 'Inativos'}</span>
+                    <button onClick={() => setActiveFilter('ALL')}><X className="w-3 h-3" /></button>
+                  </span>
+                )}
+                {(minPriceFilter || maxPriceFilter) && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-[11px] font-bold">
+                    <span>Preço: R$ {minPriceFilter || '0'} – {maxPriceFilter || '∞'}</span>
+                    <button onClick={() => { setMinPriceFilter(''); setMaxPriceFilter(''); }}><X className="w-3 h-3" /></button>
+                  </span>
+                )}
+                {(minStockFilter || maxStockFilter) && (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-100 text-rose-800 rounded-full text-[11px] font-bold">
+                    <span>Estoque: {minStockFilter || '0'} – {maxStockFilter || '∞'}</span>
+                    <button onClick={() => { setMinStockFilter(''); setMaxStockFilter(''); }}><X className="w-3 h-3" /></button>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Lista Responsiva: Cards em Mobile e Tabela em Desktop */}
@@ -458,6 +676,23 @@ export default function ProdutosPage() {
                               <Boxes className="w-3.5 h-3.5" />
                               <span>Estoque</span>
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => updateProduct(prod.id, { active: !prod.active })}
+                              className={`inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-all border shadow-2xs ${
+                                prod.active
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-red-50 hover:text-red-700 hover:border-red-200'
+                                  : 'bg-red-50 text-red-700 border-red-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'
+                              }`}
+                              title={prod.active ? 'Inativar produto' : 'Ativar produto'}
+                            >
+                              {prod.active ? (
+                                <ToggleRight className="w-3.5 h-3.5" />
+                              ) : (
+                                <ToggleLeft className="w-3.5 h-3.5" />
+                              )}
+                              <span>{prod.active ? 'Ativo' : 'Inativo'}</span>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -542,6 +777,22 @@ export default function ProdutosPage() {
                       >
                         <Boxes className="w-4 h-4" />
                         <span>Ajustar Saldo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateProduct(prod.id, { active: !prod.active })}
+                        className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center space-x-1 transition-all ${
+                          prod.active
+                            ? 'bg-emerald-50 text-emerald-700 active:bg-red-50'
+                            : 'bg-red-50 text-red-700 active:bg-emerald-50'
+                        }`}
+                        title={prod.active ? 'Inativar' : 'Ativar'}
+                      >
+                        {prod.active ? (
+                          <ToggleRight className="w-4 h-4" />
+                        ) : (
+                          <ToggleLeft className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
                   </div>

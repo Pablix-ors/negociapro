@@ -14,6 +14,8 @@ import {
   X,
   Image as ImageIcon,
   DollarSign,
+  ToggleLeft,
+  ToggleRight,
   Percent,
 } from 'lucide-react';
 
@@ -45,6 +47,9 @@ export default function EditarProdutoPage() {
   const [commissionType, setCommissionType] = useState<CommissionType>('NONE');
   const [commissionValue, setCommissionValue] = useState<number>(0);
 
+  // Status ativo / inativo
+  const [active, setActive] = useState<boolean>(true);
+
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +68,7 @@ export default function EditarProdutoPage() {
       setImageUrl(product.image_url || '');
       setCommissionType(product.commission_type || 'NONE');
       setCommissionValue(product.commission_value || 0);
+      setActive(product.active ?? true);
     }
   }, [product]);
 
@@ -145,6 +151,7 @@ export default function EditarProdutoPage() {
       image_url: imageUrl || null,
       commission_type: commissionType,
       commission_value: commissionType === 'NONE' ? 0 : commissionValue,
+      active,
     });
 
     router.push('/produtos');
@@ -221,6 +228,40 @@ export default function EditarProdutoPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Bloco de Status: Ativo / Inativo */}
+        <div className="pt-4 border-t border-slate-100">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+            Status do Produto
+          </h3>
+          <button
+            type="button"
+            onClick={() => setActive((v) => !v)}
+            className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 transition-all ${
+              active
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                : 'bg-red-50 border-red-300 text-red-800'
+            }`}
+          >
+            <div>
+              <p className={`text-sm font-black ${
+                active ? 'text-emerald-700' : 'text-red-700'
+              }`}>
+                {active ? '✅ Produto Ativo' : '🚫 Produto Inativo'}
+              </p>
+              <p className="text-xs mt-0.5 font-medium opacity-70">
+                {active
+                  ? 'Aparece na tela de vendas e pode ser comercializado.'
+                  : 'Oculto nas vendas. Clique para reativar.'}
+              </p>
+            </div>
+            {active ? (
+              <ToggleRight className="w-10 h-10 text-emerald-500 shrink-0" />
+            ) : (
+              <ToggleLeft className="w-10 h-10 text-red-400 shrink-0" />
+            )}
+          </button>
         </div>
 
         {/* Bloco 2: Identificação */}
