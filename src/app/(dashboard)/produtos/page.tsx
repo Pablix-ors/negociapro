@@ -583,8 +583,8 @@ export default function ProdutosPage() {
         ) : (
           <>
             {/* Tabela com Scroll Horizontal Garantido em qualquer resolução */}
-            <div className="hidden sm:block overflow-x-auto w-full max-w-full pb-3 scrollbar-visible">
-              <table className="w-full text-left text-xs min-w-[1050px]">
+            <div className="hidden sm:block overflow-x-auto w-full max-w-full pb-4 scrollbar-visible">
+              <table className="w-full text-left text-xs min-w-[1200px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Produto</th>
