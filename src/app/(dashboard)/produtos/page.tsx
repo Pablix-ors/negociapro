@@ -34,10 +34,11 @@ import {
   Percent,
   ToggleLeft,
   ToggleRight,
+  Trash2,
 } from 'lucide-react';
 
 export default function ProdutosPage() {
-  const { products, adjustStock, addProduct, updateProduct, bulkImportProducts } = useData();
+  const { products, adjustStock, addProduct, updateProduct, deleteProduct, bulkImportProducts } = useData();
   const [filterQuery, setFilterQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'NORMAL'>('ALL');
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -736,6 +737,18 @@ export default function ProdutosPage() {
                               )}
                               <span>{prod.active ? 'Ativo' : 'Inativo'}</span>
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Tem certeza que deseja excluir o produto "${prod.name}"?`)) {
+                                  deleteProduct(prod.id);
+                                }
+                              }}
+                              className="inline-flex items-center space-x-1 px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all border border-slate-200 hover:border-rose-200 shadow-2xs"
+                              title="Excluir Produto Permanentemente"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -836,6 +849,18 @@ export default function ProdutosPage() {
                         ) : (
                           <ToggleLeft className="w-4 h-4" />
                         )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Tem certeza que deseja excluir o produto "${prod.name}"?`)) {
+                            deleteProduct(prod.id);
+                          }
+                        }}
+                        className="py-2 px-3 rounded-xl bg-slate-100 text-slate-400 hover:text-rose-600 active:bg-rose-50"
+                        title="Excluir Produto"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>

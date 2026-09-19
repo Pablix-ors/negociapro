@@ -39,6 +39,7 @@ interface DataContextType {
   deleteCustomer: (id: string) => void;
   addProduct: (product: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Product;
   updateProduct: (id: string, product: Partial<Product>) => void;
+  deleteProduct: (id: string) => void;
   bulkImportProducts: (
     newProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>,
     updateProducts: Array<{ id: string } & Partial<Product>>
@@ -461,9 +462,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addProduct = (productData: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>): Product => {
+    const tempId = `prod-${Date.now()}`;
     const newProd: Product = {
       ...productData,
-      id: `prod-${Date.now()}`,
+      id: tempId,
       company_id: company?.id || 'demo-company',
       active: true,
       created_at: new Date().toISOString(),
@@ -471,12 +473,47 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
     const updated = [newProd, ...products];
     saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id, product: newProd }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && data.product) {
+            setProducts((prev) => prev.map((p) => (p.id === tempId ? data.product : p)));
+          }
+        })
+        .catch((err) => console.warn('Falha ao persistir produto no Supabase:', err));
+    }
+
     return newProd;
   };
 
   const updateProduct = (id: string, updatedFields: Partial<Product>) => {
     const updated = products.map(p => (p.id === id ? { ...p, ...updatedFields, updated_at: new Date().toISOString() } : p));
     saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/products', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id, id, ...updatedFields }),
+      }).catch((err) => console.warn('Falha ao atualizar produto no Supabase:', err));
+    }
+  };
+
+  const deleteProduct = (id: string) => {
+    const updated = products.filter(p => p.id !== id);
+    saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch(`/api/products?id=${encodeURIComponent(id)}&company_id=${encodeURIComponent(company.id)}`, {
+        method: 'DELETE',
+      }).catch((err) => console.warn('Falha ao deletar produto no Supabase:', err));
+    }
   };
 
   // Importação em lote atômica: todos os novos e atualizações são aplicados
@@ -509,23 +546,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       updated_at: now,
     }));
 
-    saveProd([...created, ...merged]);
+    const finalProducts = [...created, ...merged];
+    saveProd(finalProducts);
+
+    if (company?.id && !isDemoCompany && created.length > 0) {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id, products: created }),
+      }).catch((err) => console.warn('Falha ao sincronizar lote de produtos no Supabase:', err));
+    }
+
     return { added: created.length, updated: updateProds.length };
   };
 
   const adjustStock = (productId: string, quantityChange: number, reason: string) => {
+    let targetNewStock = 0;
     const updated = products.map(p => {
       if (p.id === productId) {
-        const newStock = Math.max(0, p.current_stock + quantityChange);
+        targetNewStock = Math.max(0, p.current_stock + quantityChange);
         return {
           ...p,
-          current_stock: newStock,
+          current_stock: targetNewStock,
           updated_at: new Date().toISOString(),
         };
       }
       return p;
     });
     saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/products', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id, id: productId, current_stock: targetNewStock }),
+      }).catch((err) => console.warn('Falha ao ajustar estoque no Supabase:', err));
+    }
   };
 
   // Módulo de Profissionais
@@ -924,6 +980,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         deleteCustomer,
         addProduct,
         updateProduct,
+        deleteProduct,
         bulkImportProducts,
         adjustStock,
         addProfessional,

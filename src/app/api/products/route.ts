@@ -111,3 +111,63 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
 }
+
+// PUT: Atualizar produto no banco de dados Supabase
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { company_id, id, ...updateFields } = body;
+
+    if (!company_id || !id) {
+      return NextResponse.json({ success: false, error: 'company_id e id são obrigatórios' }, { status: 400 });
+    }
+
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from('products')
+      .update({
+        ...updateFields,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('company_id', company_id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, product: data });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
+  }
+}
+
+// DELETE: Deletar produto
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const companyId = searchParams.get('company_id');
+
+    if (!id || !companyId) {
+      return NextResponse.json({ success: false, error: 'id e company_id são obrigatórios' }, { status: 400 });
+    }
+
+    const supabase = getAdminClient();
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id)
+      .eq('company_id', companyId);
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
+  }
+}

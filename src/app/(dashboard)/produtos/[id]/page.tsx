@@ -17,13 +17,14 @@ import {
   ToggleLeft,
   ToggleRight,
   Percent,
+  Trash2,
 } from 'lucide-react';
 
 export default function EditarProdutoPage() {
   const router = useRouter();
   const params = useParams();
   const productId = params?.id as string;
-  const { products, updateProduct } = useData();
+  const { products, updateProduct, deleteProduct } = useData();
 
   const product = products.find((p) => p.id === productId);
 
@@ -459,20 +460,36 @@ export default function EditarProdutoPage() {
         </div>
 
         {/* Ações */}
-        <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100">
-          <Link
-            href="/produtos"
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            Cancelar
-          </Link>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
           <button
-            type="submit"
-            className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Tem certeza que deseja excluir o produto "${product.name}"? Esta ação removerá o produto de todos os dispositivos.`)) {
+                deleteProduct(product.id);
+                router.push('/produtos');
+              }
+            }}
+            className="w-full sm:w-auto inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors cursor-pointer"
           >
-            <Check className="w-4 h-4" />
-            <span>Salvar Alterações</span>
+            <Trash2 className="w-4 h-4 text-rose-600" />
+            <span>Excluir Produto</span>
           </button>
+
+          <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+            <Link
+              href="/produtos"
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Cancelar
+            </Link>
+            <button
+              type="submit"
+              className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
+            >
+              <Check className="w-4 h-4" />
+              <span>Salvar Alterações</span>
+            </button>
+          </div>
         </div>
       </form>
     </div>
