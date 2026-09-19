@@ -101,29 +101,56 @@ export function downloadProductExcelTemplate() {
 }
 
 // 2. Valida produtos lidos do arquivo
-export function validateImportedProducts(rows: any[], existingSkus: string[]): {
-  validProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>;
+// existingProducts: lista de produtos já cadastrados com id + sku para detectar edições
+export function validateImportedProducts(
+  rows: any[],
+  existingProducts: Array<{ id: string; sku: string | null }>
+): {
+  newProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>;
+  updateProducts: Array<{ id: string } & Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>;
   errors: ImportErrorItem[];
 } {
-  const validProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>> = [];
+  const newProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>> = [];
+  const updateProducts: Array<{ id: string } & Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>> = [];
   const errors: ImportErrorItem[] = [];
   const seenSkus = new Set<string>();
 
+  // Mapa de SKU → id para lookup rápido
+  const existingSkuMap = new Map<string, string>();
+  existingProducts.forEach((p) => { if (p.sku) existingSkuMap.set(p.sku, p.id); });
+
   rows.forEach((row, index) => {
     const rowNumber = index + 2; // Linha 1 é o cabeçalho
-    const name = String(row['Nome *'] || row['Nome'] || row['nome'] || '').trim();
+
+    // Suporta tanto o modelo de importação (com *) quanto o arquivo exportado (sem *)
+    const name = String(
+      row['Nome *'] || row['Nome'] || row['nome'] || ''
+    ).trim();
     const sku = String(row['SKU'] || row['sku'] || '').trim();
-    const barcode = String(row['Código de Barras'] || row['Codigo de Barras'] || row['barcode'] || '').trim();
-    const unit = String(row['Unidade *'] || row['Unidade'] || row['unit'] || 'UN').trim().toUpperCase();
+    const barcode = String(
+      row['Código de Barras'] || row['Codigo de Barras'] || row['barcode'] || ''
+    ).trim();
+    const unit = String(
+      row['Unidade *'] || row['Unidade'] || row['unit'] || 'UN'
+    ).trim().toUpperCase();
     const brand = String(row['Marca'] || row['marca'] || '').trim();
 
-    const costPrice = Number(row['Preço Custo (R$) *'] || row['Preço Custo'] || row['cost_price'] || 0);
-    const sellingPrice = Number(row['Preço Venda (R$) *'] || row['Preço Venda'] || row['selling_price'] || 0);
-    const minPrice = Number(row['Preço Mínimo (R$) *'] || row['Preço Mínimo'] || row['min_price'] || sellingPrice);
-    const currentStock = Number(row['Estoque Atual *'] || row['Estoque Atual'] || row['current_stock'] || 0);
-    const minStock = Number(row['Estoque Mínimo *'] || row['Estoque Mínimo'] || row['min_stock'] || 0);
+    // Preços — aceita colunas com * (modelo) e sem * (exportado)
+    const rawCost  = row['Preço Custo (R$) *']  ?? row['Preço Custo (R$)']  ?? row['Preço Custo']  ?? row['cost_price']  ?? 0;
+    const rawSell  = row['Preço Venda (R$) *']  ?? row['Preço Venda (R$)']  ?? row['Preço Venda']  ?? row['selling_price'] ?? 0;
+    const rawMin   = row['Preço Mínimo (R$) *'] ?? row['Preço Mínimo (R$)'] ?? row['Preço Mínimo'] ?? row['min_price'];
+    const rawStock = row['Estoque Atual *']      ?? row['Estoque Atual']     ?? row['current_stock'] ?? 0;
+    const rawMin2  = row['Estoque Mínimo *']     ?? row['Estoque Mínimo']    ?? row['min_stock']     ?? 0;
 
-    const rawCommType = String(row['Tipo de Comissão'] || row['Tipo Comissão'] || '').trim().toUpperCase();
+    const costPrice    = Number(rawCost);
+    const sellingPrice = Number(rawSell);
+    const currentStock = Number(rawStock);
+    const minStock     = Number(rawMin2);
+    const minPrice     = rawMin != null ? Number(rawMin) : sellingPrice;
+
+    const rawCommType = String(
+      row['Tipo de Comissão'] || row['Tipo Comissão'] || ''
+    ).trim().toUpperCase();
     const rawCommVal = Number(row['Valor da Comissão'] || row['Valor Comissão'] || 0);
 
     let commissionType: 'NONE' | 'PERCENTAGE' | 'FIXED' = 'NONE';
@@ -132,6 +159,10 @@ export function validateImportedProducts(rows: any[], existingSkus: string[]): {
     } else if (rawCommType.includes('FIX')) {
       commissionType = 'FIXED';
     }
+
+    // Status (coluna exportada)
+    const rawStatus = String(row['Status'] || 'ATIVO').trim().toUpperCase();
+    const active = rawStatus !== 'INATIVO';
 
     // Validações
     if (!name) {
@@ -144,24 +175,12 @@ export function validateImportedProducts(rows: any[], existingSkus: string[]): {
       return;
     }
 
-    if (isNaN(minPrice) || minPrice > sellingPrice) {
+    if (!isNaN(minPrice) && minPrice > sellingPrice) {
       errors.push({ row: rowNumber, field: 'Preço Mínimo', message: 'Preço mínimo não pode superar o preço de venda.', value: minPrice });
       return;
     }
 
-    if (sku) {
-      if (seenSkus.has(sku)) {
-        errors.push({ row: rowNumber, field: 'SKU', message: `SKU "${sku}" duplicado na própria planilha.`, value: sku });
-        return;
-      }
-      if (existingSkus.includes(sku)) {
-        errors.push({ row: rowNumber, field: 'SKU', message: `SKU "${sku}" já cadastrado no sistema.`, value: sku });
-        return;
-      }
-      seenSkus.add(sku);
-    }
-
-    validProducts.push({
+    const productData = {
       name,
       sku: sku || null,
       barcode: barcode || null,
@@ -170,17 +189,35 @@ export function validateImportedProducts(rows: any[], existingSkus: string[]): {
       description: String(row['Descrição'] || row['Descricao'] || '').trim() || null,
       cost_price: isNaN(costPrice) ? 0 : costPrice,
       selling_price: sellingPrice,
-      min_price: minPrice || sellingPrice,
+      min_price: !isNaN(minPrice) ? minPrice : sellingPrice,
       current_stock: isNaN(currentStock) ? 0 : currentStock,
       min_stock: isNaN(minStock) ? 0 : minStock,
       commission_type: commissionType,
       commission_value: isNaN(rawCommVal) ? 0 : rawCommVal,
-      active: true,
+      active,
       image_url: null,
-    });
+    };
+
+    // Se o SKU já existe no sistema → é uma atualização, não um novo produto
+    if (sku && existingSkuMap.has(sku)) {
+      const existingId = existingSkuMap.get(sku)!;
+      updateProducts.push({ id: existingId, ...productData });
+      return;
+    }
+
+    // SKU duplicado dentro da própria planilha
+    if (sku) {
+      if (seenSkus.has(sku)) {
+        errors.push({ row: rowNumber, field: 'SKU', message: `SKU "${sku}" duplicado na própria planilha.`, value: sku });
+        return;
+      }
+      seenSkus.add(sku);
+    }
+
+    newProducts.push(productData);
   });
 
-  return { validProducts, errors };
+  return { newProducts, updateProducts, errors };
 }
 
 // 3. Exportação de produtos para Excel (.xlsx) ou CSV

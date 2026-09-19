@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 
 export default function ProdutosPage() {
-  const { products, adjustStock, addProduct } = useData();
+  const { products, adjustStock, addProduct, updateProduct } = useData();
   const [filterQuery, setFilterQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'NORMAL'>('ALL');
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -50,6 +50,7 @@ export default function ProdutosPage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [previewProducts, setPreviewProducts] = useState<any[]>([]);
+  const [previewUpdates, setPreviewUpdates] = useState<any[]>([]);
   const [importErrors, setImportErrors] = useState<ImportErrorItem[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
@@ -108,10 +109,11 @@ export default function ProdutosPage() {
         const sheet = workbook.Sheets[sheetName];
         const rawJson = XLSX.utils.sheet_to_json(sheet);
 
-        const existingSkus = products.map((p) => p.sku).filter(Boolean) as string[];
-        const { validProducts, errors } = validateImportedProducts(rawJson, existingSkus);
+        const existingProducts = products.map((p) => ({ id: p.id, sku: p.sku ?? null }));
+        const { newProducts, updateProducts, errors } = validateImportedProducts(rawJson, existingProducts);
 
-        setPreviewProducts(validProducts);
+        setPreviewProducts(newProducts);
+        setPreviewUpdates(updateProducts);
         setImportErrors(errors);
       } catch (err) {
         setImportErrors([{ row: 0, field: 'Arquivo', message: 'Erro ao processar planilha. Verifique se é um arquivo Excel ou CSV válido.' }]);
@@ -122,23 +124,36 @@ export default function ProdutosPage() {
 
   // Executar Importação dos produtos válidos
   const handleConfirmImport = () => {
-    if (previewProducts.length === 0) return;
+    if (previewProducts.length === 0 && previewUpdates.length === 0) return;
 
     setIsImporting(true);
-    let count = 0;
+    let addedCount = 0;
+    let updatedCount = 0;
+
     previewProducts.forEach((prod) => {
       addProduct(prod);
-      count++;
+      addedCount++;
+    });
+
+    previewUpdates.forEach(({ id, ...fields }) => {
+      updateProduct(id, fields);
+      updatedCount++;
     });
 
     setIsImporting(false);
-    setImportSuccessMessage(`${count} produtos importados com sucesso para o seu catálogo!`);
+
+    const parts: string[] = [];
+    if (addedCount > 0) parts.push(`${addedCount} produto(s) adicionado(s)`);
+    if (updatedCount > 0) parts.push(`${updatedCount} produto(s) atualizado(s)`);
+    setImportSuccessMessage(parts.join(' e ') + ' com sucesso!');
+
     setPreviewProducts([]);
+    setPreviewUpdates([]);
     setImportFile(null);
     setTimeout(() => {
       setImportModalOpen(false);
       setImportSuccessMessage(null);
-    }, 2000);
+    }, 2500);
   };
 
   // Exportar produtos por critério
@@ -665,12 +680,12 @@ export default function ProdutosPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={previewProducts.length === 0 || isImporting}
+                    disabled={(previewProducts.length === 0 && previewUpdates.length === 0) || isImporting}
                     onClick={handleConfirmImport}
                     className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md active:scale-95 flex items-center space-x-1.5"
                   >
                     <Check className="w-4 h-4" />
-                    <span>{isImporting ? 'Importando...' : `Confirmar Importação (${previewProducts.length})`}</span>
+                    <span>{isImporting ? 'Importando...' : `Confirmar Importação (${previewProducts.length + previewUpdates.length})`}</span>
                   </button>
                 </div>
               </div>
