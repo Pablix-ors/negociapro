@@ -36,11 +36,13 @@ import {
   Building2,
   Send,
   RefreshCw,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 
 export default function ProfissionaisPage() {
   const router = useRouter();
-  const { professionals, sales, commissions, addProfessional, updateProfessional, deactivateProfessional } = useData();
+  const { professionals, sales, commissions, addProfessional, updateProfessional, deactivateProfessional, deleteProfessional } = useData();
   const { user: currentUser, company: currentCompany, isLoading } = useAuth();
   const isAllowed = currentUser?.role === 'ADMIN' || currentUser?.role === 'GERENTE';
 
@@ -55,6 +57,10 @@ export default function ProfissionaisPage() {
 
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+
+  // Modal de Exclusão
+  const [profToDelete, setProfToDelete] = useState<Professional | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Modal de Cadastro/Edição
   const [modalOpen, setModalOpen] = useState(false);
@@ -357,6 +363,58 @@ export default function ProfissionaisPage() {
     }
   };
 
+  const handleDeleteProfessional = async () => {
+    if (!profToDelete) return;
+    setIsDeleting(true);
+
+    try {
+      const targetCompanyId = currentCompany?.id || currentUser?.company_id || 'demo-company';
+
+      // 1. Chamar rota para remover do banco de dados (profiles / professionals / auth)
+      if (profToDelete.email) {
+        await fetch('/api/users/list', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: profToDelete.id,
+            email: profToDelete.email,
+            companyId: targetCompanyId,
+            requesterRole: currentUser?.role || 'ADMIN',
+          }),
+        }).catch(() => {});
+      }
+
+      // 2. Remover também do cache local de usuários da empresa se estiver salvo
+      try {
+        const tenantUsersKey = targetCompanyId ? `negociapro_users_list_tenant_${targetCompanyId}` : 'negociapro_users_list';
+        const rawUsers = localStorage.getItem(tenantUsersKey);
+        if (rawUsers && profToDelete.email) {
+          const currentList: Profile[] = JSON.parse(rawUsers);
+          const filtered = currentList.filter(u => u.email.toLowerCase() !== profToDelete.email?.toLowerCase());
+          localStorage.setItem(tenantUsersKey, JSON.stringify(filtered));
+        }
+      } catch {}
+
+      // 3. Remover do DataContext dos profissionais
+      deleteProfessional(profToDelete.id);
+
+      setFeedbackMessage({
+        type: 'success',
+        text: `Profissional ${profToDelete.name} excluído com sucesso!`,
+      });
+    } catch {
+      deleteProfessional(profToDelete.id);
+      setFeedbackMessage({
+        type: 'success',
+        text: `Profissional ${profToDelete.name} removido da lista.`,
+      });
+    } finally {
+      setIsDeleting(false);
+      setProfToDelete(null);
+      setTimeout(() => setFeedbackMessage(null), 3500);
+    }
+  };
+
   // Totais Consolidados
   const totalCommissionEarned = professionals.reduce((acc, p) => acc + (p.commission_earned || 0), 0);
   const totalCommissionPaid = professionals.reduce((acc, p) => acc + (p.commission_paid || 0), 0);
@@ -632,7 +690,7 @@ export default function ProfissionaisPage() {
                   <button
                     type="button"
                     onClick={() => deactivateProfessional(prof.id)}
-                    className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   >
                     Desativar
                   </button>
@@ -640,11 +698,20 @@ export default function ProfissionaisPage() {
                   <button
                     type="button"
                     onClick={() => updateProfessional(prof.id, { active: true })}
-                    className="px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                    className="px-2.5 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                   >
                     Reativar
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => setProfToDelete(prof)}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  title="Excluir profissional e acesso"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           ))}
@@ -1006,6 +1073,67 @@ export default function ProfissionaisPage() {
                 className="text-xs text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão de Profissional */}
+      {profToDelete && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeleting) setProfToDelete(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs cursor-pointer"
+        >
+          <div className="bg-white rounded-3xl max-w-sm w-full shadow-2xl p-6 border border-slate-100 text-center animate-in fade-in zoom-in-95 cursor-default space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-black text-slate-900">Excluir Profissional?</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Você tem certeza que deseja excluir <strong>{profToDelete.name}</strong>?
+                {profToDelete.email && (
+                  <span className="block mt-1 text-[11px] text-slate-400 font-mono">
+                    {profToDelete.email}
+                  </span>
+                )}
+              </p>
+              <p className="text-[11px] text-rose-600 bg-rose-50 p-2 rounded-xl mt-2 font-medium">
+                Esta ação remove o cadastro da equipe e revoga seu acesso ao sistema.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setProfToDelete(null)}
+                className="py-2.5 px-3 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteProfessional}
+                className="py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

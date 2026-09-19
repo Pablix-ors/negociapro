@@ -102,7 +102,16 @@ export async function DELETE(request: Request) {
       await supabase.from('profiles').delete().eq('email', email.trim().toLowerCase());
     }
 
-    // 2. Se tiver no Auth, deletar ou desvincular
+    // 2. Remover também da tabela professionals (interligação automática)
+    if (email) {
+      const profQuery = supabase.from('professionals').delete().eq('email', email.trim().toLowerCase());
+      if (companyId) {
+        profQuery.eq('company_id', companyId);
+      }
+      await profQuery;
+    }
+
+    // 3. Se tiver no Auth, deletar ou desvincular
     if (email) {
       const { data: authData } = await supabase.auth.admin.listUsers();
       const authUser = authData?.users?.find(

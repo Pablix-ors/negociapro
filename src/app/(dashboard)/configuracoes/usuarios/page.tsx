@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
 import { UserCheck, Plus, Shield, User, Check, X, Trash2, AlertTriangle, Loader2, Send, RefreshCw } from 'lucide-react';
 import { Profile, UserRole } from '@/types/database';
 
@@ -37,6 +38,7 @@ const DEFAULT_USERS: Profile[] = [
 
 export default function UsuariosConfigPage() {
   const { user, company } = useAuth();
+  const { professionals, deleteProfessional } = useData();
 
   const [usersList, setUsersList] = useState<Profile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -250,10 +252,19 @@ export default function UsuariosConfigPage() {
         }),
       });
 
-      // 2. Atualizar estado local
+      // 2. Atualizar estado local de usuários
       const updated = usersList.filter((u) => u.id !== userToDelete.id && u.email.toLowerCase() !== userToDelete.email.toLowerCase());
       saveUsersState(updated);
-      setFeedbackMessage({ type: 'success', text: `Usuário ${userToDelete.name} excluído com sucesso!` });
+
+      // 3. Sincronizar e remover também da lista de profissionais se existir com o mesmo email
+      if (userToDelete.email) {
+        const matchingProf = professionals.find(p => p.email?.toLowerCase() === userToDelete.email.toLowerCase());
+        if (matchingProf) {
+          deleteProfessional(matchingProf.id);
+        }
+      }
+
+      setFeedbackMessage({ type: 'success', text: `Usuário e profissional ${userToDelete.name} excluído com sucesso!` });
     } catch {
       const updated = usersList.filter((u) => u.id !== userToDelete.id);
       saveUsersState(updated);

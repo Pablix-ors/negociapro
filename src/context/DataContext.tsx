@@ -47,6 +47,7 @@ interface DataContextType {
   addProfessional: (prof: Omit<Professional, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Professional;
   updateProfessional: (id: string, prof: Partial<Professional>) => void;
   deactivateProfessional: (id: string) => void;
+  deleteProfessional: (id: string) => void;
   createSale: (saleData: {
     customer_id: string;
     professional_id?: string;
@@ -457,6 +458,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     saveProfsState(updated);
   };
 
+  const deleteProfessional = (id: string) => {
+    const updated = professionals.filter(p => p.id !== id);
+    saveProfsState(updated);
+  };
+
   // Finalização da Venda com Snapshot de Comissão e Vinculação de Profissional
   const createSale = (saleData: {
     customer_id: string;
@@ -750,6 +756,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         addProfessional,
         updateProfessional,
         deactivateProfessional,
+        deleteProfessional,
         createSale,
         cancelSale,
         markCommissionAsPaid,
