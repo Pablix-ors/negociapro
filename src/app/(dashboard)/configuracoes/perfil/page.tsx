@@ -101,6 +101,16 @@ export default function MeuPerfilPage() {
   const [passError, setPassError] = useState<string | null>(null);
   const [savingPass, setSavingPass] = useState(false);
 
+  // Sincronizar campos com os dados carregados do perfil
+  useEffect(() => {
+    if (user?.name) {
+      setName(user.name);
+    }
+    if (user?.phone !== undefined) {
+      setPhone(user.phone || '');
+    }
+  }, [user?.name, user?.phone]);
+
   // Salvar dados básicos do perfil
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,9 +124,13 @@ export default function MeuPerfilPage() {
     setProfileSuccess(null);
 
     try {
-      updateProfile({ name: name.trim(), phone: phone.trim() || null });
-      setProfileSuccess('Dados do perfil atualizados com sucesso!');
-      setTimeout(() => setProfileSuccess(null), 3500);
+      const res = await updateProfile({ name: name.trim(), phone: phone.trim() || null });
+      if (res && res.success === false) {
+        setProfileError(res.message || 'Erro ao sincronizar dados no servidor.');
+      } else {
+        setProfileSuccess('Dados do perfil atualizados com sucesso!');
+        setTimeout(() => setProfileSuccess(null), 3500);
+      }
     } catch (err: any) {
       setProfileError(err?.message || 'Erro ao atualizar perfil.');
     } finally {

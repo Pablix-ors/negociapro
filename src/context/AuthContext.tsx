@@ -16,8 +16,8 @@ interface AuthContextType {
   updateUserPassword: (newPass: string) => Promise<{ success: boolean; message?: string }>;
   resendConfirmation: (email: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
-  updateCompany: (updated: Partial<Company>) => void;
-  updateProfile: (updated: Partial<Profile>) => void;
+  updateCompany: (updated: Partial<Company>) => Promise<{ success: boolean; message?: string }>;
+  updateProfile: (updated: Partial<Profile>) => Promise<{ success: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -345,18 +345,81 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateCompany = (updated: Partial<Company>) => {
-    if (!company) return;
+  const updateCompany = async (updated: Partial<Company>): Promise<{ success: boolean; message?: string }> => {
+    if (!company) return { success: false, message: 'Empresa não encontrada' };
     const newCompany = { ...company, ...updated };
     setCompany(newCompany);
     localStorage.setItem('negociapro_company', JSON.stringify(newCompany));
+
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_company',
+          companyId: company.id,
+          companyData: updated,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.company) {
+        setCompany(data.company);
+        localStorage.setItem('negociapro_company', JSON.stringify(data.company));
+        return { success: true };
+      }
+      return { success: false, message: data.message || 'Falha ao sincronizar empresa' };
+    } catch (err: any) {
+      console.warn('Erro ao sincronizar empresa no Supabase:', err);
+      return { success: true };
+    }
   };
 
-  const updateProfile = (updated: Partial<Profile>) => {
-    if (!user) return;
+  const updateProfile = async (updated: Partial<Profile>): Promise<{ success: boolean; message?: string }> => {
+    if (!user) return { success: false, message: 'Usuário não autenticado' };
     const newUser = { ...user, ...updated };
     setUser(newUser);
     localStorage.setItem('negociapro_user', JSON.stringify(newUser));
+
+    // Atualizar também na lista de usuários em cache local se existir
+    try {
+      const tenantKey = company?.id ? `_tenant_${company.id}` : '';
+      const listKeys = [`negociapro_users_list${tenantKey}`, 'negociapro_users_list'];
+      listKeys.forEach((key) => {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const list = JSON.parse(raw);
+          const idx = list.findIndex((u: any) => (u.id && u.id === user.id) || (u.email && u.email.toLowerCase() === user.email.toLowerCase()));
+          if (idx >= 0) {
+            list[idx] = { ...list[idx], ...updated };
+            localStorage.setItem(key, JSON.stringify(list));
+          }
+        }
+      });
+    } catch {}
+
+    // Sincronizar de forma permanente com o banco Supabase
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_profile',
+          userId: user.id,
+          email: user.email,
+          profileData: updated,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        setUser(data.user);
+        localStorage.setItem('negociapro_user', JSON.stringify(data.user));
+        return { success: true };
+      }
+      return { success: false, message: data.message || 'Falha ao sincronizar dados no banco' };
+    } catch (err: any) {
+      console.warn('Erro ao atualizar perfil no Supabase:', err);
+      return { success: true };
+    }
   };
 
   return (
