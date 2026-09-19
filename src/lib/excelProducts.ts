@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Product } from '@/types/database';
 
 export interface ProductExcelRow {
@@ -24,8 +25,21 @@ export interface ImportErrorItem {
   value?: any;
 }
 
+// Helper para disparar download de Blob no navegador
+function saveBlobFile(buffer: ArrayBuffer | Uint8Array, filename: string, mimeType: string) {
+  const blob = new Blob([buffer as any], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // 1. Gera e baixa Modelo Excel oficial (.xlsx) com duas abas (Planilha Exemplo + Instruções)
-export function downloadProductExcelTemplate() {
+export async function downloadProductExcelTemplate() {
   const sampleData = [
     {
       'Nome *': 'Cimento CP II 50kg',
@@ -33,13 +47,13 @@ export function downloadProductExcelTemplate() {
       'Código de Barras': '7891000000012',
       'Unidade *': 'SC',
       'Marca': 'Votoran',
-      'Preço Custo (R$) *': 24.0,
-      'Preço Venda (R$) *': 36.9,
-      'Preço Mínimo (R$) *': 31.0,
+      'Preço Custo (R$) *': '24,00',
+      'Preço Venda (R$) *': '36,90',
+      'Preço Mínimo (R$) *': '31,00',
       'Estoque Atual *': 200,
       'Estoque Mínimo *': 50,
       'Tipo de Comissão': 'PERCENTUAL', // 'SEM COMISSAO', 'PERCENTUAL', 'FIXO'
-      'Valor da Comissão': 5.0,
+      'Valor da Comissão': '5,00',
       'Descrição': 'Cimento Portland composto de alta resistência.',
     },
     {
@@ -48,13 +62,13 @@ export function downloadProductExcelTemplate() {
       'Código de Barras': '7891000000050',
       'Unidade *': 'UN',
       'Marca': 'Bosch',
-      'Preço Custo (R$) *': 260.0,
-      'Preço Venda (R$) *': 389.0,
-      'Preço Mínimo (R$) *': 340.0,
+      'Preço Custo (R$) *': '260,00',
+      'Preço Venda (R$) *': '389,00',
+      'Preço Mínimo (R$) *': '340,00',
       'Estoque Atual *': 40,
       'Estoque Mínimo *': 10,
       'Tipo de Comissão': 'FIXO',
-      'Valor da Comissão': 25.0,
+      'Valor da Comissão': '25,00',
       'Descrição': 'Furadeira profissional 220V com mandril.',
     },
     {
@@ -63,13 +77,13 @@ export function downloadProductExcelTemplate() {
       'Código de Barras': '',
       'Unidade *': 'M³',
       'Marca': 'Porto Areia',
-      'Preço Custo (R$) *': 85.0,
-      'Preço Venda (R$) *': 145.0,
-      'Preço Mínimo (R$) *': 120.0,
+      'Preço Custo (R$) *': '85,00',
+      'Preço Venda (R$) *': '145,00',
+      'Preço Mínimo (R$) *': '120,00',
       'Estoque Atual *': 60,
       'Estoque Mínimo *': 15,
       'Tipo de Comissão': 'SEM COMISSAO',
-      'Valor da Comissão': 0.0,
+      'Valor da Comissão': 0,
       'Descrição': 'Areia limpa para concretagem e reboco.',
     },
   ];
@@ -80,8 +94,8 @@ export function downloadProductExcelTemplate() {
     { Campo: 'Código de Barras', Obrigatório: 'NÃO', Descrição: 'Código EAN-13 ou identificador de leitor.' },
     { Campo: 'Unidade *', Obrigatório: 'SIM', Descrição: 'Exemplos: UN, SC, KG, M, M², M³, CX, RL, LATA, BR, MIL.' },
     { Campo: 'Marca', Obrigatório: 'NÃO', Descrição: 'Fabricante ou fornecedor do produto.' },
-    { Campo: 'Preço Custo (R$) *', Obrigatório: 'SIM', Descrição: 'Valor de aquisição / custo mercadoria. Ex: 24.50' },
-    { Campo: 'Preço Venda (R$) *', Obrigatório: 'SIM', Descrição: 'Preço de tabela praticado comercialmente. Ex: 36.90' },
+    { Campo: 'Preço Custo (R$) *', Obrigatório: 'SIM', Descrição: 'Valor de aquisição / custo mercadoria. Ex: 24,50' },
+    { Campo: 'Preço Venda (R$) *', Obrigatório: 'SIM', Descrição: 'Preço de tabela praticado comercialmente. Ex: 36,90' },
     { Campo: 'Preço Mínimo (R$) *', Obrigatório: 'SIM', Descrição: 'Menor preço permitido na negociação sem bloqueio.' },
     { Campo: 'Estoque Atual *', Obrigatório: 'SIM', Descrição: 'Saldo físico inicial do produto em estoque.' },
     { Campo: 'Estoque Mínimo *', Obrigatório: 'SIM', Descrição: 'Alerta de estoque crítico quando atingir este nível.' },
@@ -90,14 +104,78 @@ export function downloadProductExcelTemplate() {
     { Campo: 'Descrição', Obrigatório: 'NÃO', Descrição: 'Observações, especificações técnicas ou instruções.' },
   ];
 
-  const wb = XLSX.utils.book_new();
-  const wsData = XLSX.utils.json_to_sheet(sampleData);
-  const wsInst = XLSX.utils.json_to_sheet(instructions);
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'NegociaPro';
 
-  XLSX.utils.book_append_sheet(wb, wsData, 'Produtos Exemplo');
-  XLSX.utils.book_append_sheet(wb, wsInst, 'Instruções');
+  // 1ª Aba: Produtos Exemplo
+  const wsData = wb.addWorksheet('Produtos Exemplo');
+  const sampleHeaders = Object.keys(sampleData[0]);
+  wsData.columns = sampleHeaders.map((header) => ({
+    header,
+    key: header,
+    width: Math.max(header.length + 5, 18),
+  }));
 
-  XLSX.writeFile(wb, 'modelo_importacao_produtos_negociapro.xlsx');
+  sampleData.forEach((row) => wsData.addRow(row));
+
+  // Estilização do cabeçalho
+  const headerRow1 = wsData.getRow(1);
+  headerRow1.height = 28;
+  headerRow1.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' },
+    };
+  });
+
+  // Centraliza todas as células (cabeçalho e dados)
+  wsData.eachRow((row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+  });
+
+  // 2ª Aba: Instruções
+  const wsInst = wb.addWorksheet('Instruções');
+  const instHeaders = Object.keys(instructions[0]);
+  wsInst.columns = [
+    { header: 'Campo', key: 'Campo', width: 24 },
+    { header: 'Obrigatório', key: 'Obrigatório', width: 14 },
+    { header: 'Descrição', key: 'Descrição', width: 65 },
+  ];
+
+  instructions.forEach((row) => wsInst.addRow(row));
+
+  const headerRow2 = wsInst.getRow(1);
+  headerRow2.height = 28;
+  headerRow2.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' },
+    };
+  });
+
+  wsInst.eachRow((row, rowNumber) => {
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      // Descrição alinha à esquerda para leitura confortável, demais centralizados
+      if (rowNumber > 1 && colNumber === 3) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  saveBlobFile(
+    buffer,
+    'modelo_importacao_produtos_negociapro.xlsx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
 }
 
 // 2. Valida produtos lidos do arquivo
@@ -260,9 +338,9 @@ function fmtNum(value: number): number | string {
   return value.toFixed(2).replace('.', ',');
 }
 
-export function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv') {
+export async function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv') {
   const exportData = products.map((p) => ({
-    'ID (não editar)': p.id,          // usado na reimportação para garantir match correto
+    'ID (não editar)': p.id, // usado na reimportação para garantir match correto
     'Nome': p.name,
     'SKU': p.sku || '',
     'Código de Barras': p.barcode || '',
@@ -278,29 +356,72 @@ export function exportProductsToFile(products: Product[], format: 'xlsx' | 'csv'
     'Status': p.active ? 'ATIVO' : 'INATIVO',
   }));
 
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'NegociaPro';
+  const ws = wb.addWorksheet('Catálogo de Produtos');
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(exportData);
+  const columnsDef = [
+    { header: 'ID (não editar)', key: 'ID (não editar)', width: 38 },
+    { header: 'Nome', key: 'Nome', width: 32 },
+    { header: 'SKU', key: 'SKU', width: 16 },
+    { header: 'Código de Barras', key: 'Código de Barras', width: 18 },
+    { header: 'Unidade', key: 'Unidade', width: 12 },
+    { header: 'Marca', key: 'Marca', width: 18 },
+    { header: 'Preço Custo (R$)', key: 'Preço Custo (R$)', width: 18 },
+    { header: 'Preço Venda (R$)', key: 'Preço Venda (R$)', width: 18 },
+    { header: 'Preço Mínimo (R$)', key: 'Preço Mínimo (R$)', width: 18 },
+    { header: 'Estoque Atual', key: 'Estoque Atual', width: 15 },
+    { header: 'Estoque Mínimo', key: 'Estoque Mínimo', width: 15 },
+    { header: 'Tipo de Comissão', key: 'Tipo de Comissão', width: 18 },
+    { header: 'Valor da Comissão', key: 'Valor da Comissão', width: 18 },
+    { header: 'Status', key: 'Status', width: 14 },
+  ];
 
-  // Força as colunas de ID e SKU como texto puro para evitar que o Excel converta em número
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-  for (let R = range.s.r + 1; R <= range.e.r; R++) {
-    // Coluna A = ID, Coluna C = SKU
-    ['A', 'C'].forEach((col) => {
-      const cellAddr = `${col}${R + 1}`;
-      if (ws[cellAddr] && ws[cellAddr].v !== undefined) {
-        ws[cellAddr].t = 's'; // força tipo string
-        ws[cellAddr].v = String(ws[cellAddr].v);
-        delete ws[cellAddr].z; // remove formatação numérica se houver
-      }
+  ws.columns = columnsDef;
+
+  // Garante que ID, SKU e Código de Barras fiquem no formato texto
+  ['ID (não editar)', 'SKU', 'Código de Barras'].forEach((key) => {
+    const col = ws.getColumn(key);
+    if (col) col.numFmt = '@';
+  });
+
+  exportData.forEach((row) => ws.addRow(row));
+
+  // Estilização do cabeçalho
+  const headerRow = ws.getRow(1);
+  headerRow.height = 28;
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' }, // Slate-800
+    };
+  });
+
+  // Centraliza absolutamente todas as células de todas as linhas (cabeçalho e dados)
+  ws.eachRow((row) => {
+    if (row.number > 1) {
+      row.height = 22;
+    }
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
-  }
-
-  XLSX.utils.book_append_sheet(wb, ws, 'Catálogo de Produtos');
+  });
 
   if (format === 'xlsx') {
-    XLSX.writeFile(wb, 'produtos_negociapro.xlsx');
+    const buffer = await wb.xlsx.writeBuffer();
+    saveBlobFile(
+      buffer,
+      'produtos_negociapro.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
   } else {
-    XLSX.writeFile(wb, 'produtos_negociapro.csv');
+    const buffer = await wb.csv.writeBuffer();
+    saveBlobFile(
+      buffer,
+      'produtos_negociapro.csv',
+      'text/csv;charset=utf-8;'
+    );
   }
 }

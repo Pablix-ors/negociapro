@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { UserCheck, Plus, Shield, User, Check, X, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { UserCheck, Plus, Shield, User, Check, X, Trash2, AlertTriangle, Loader2, Send, RefreshCw } from 'lucide-react';
 import { Profile, UserRole } from '@/types/database';
 
 const DEFAULT_USERS: Profile[] = [
@@ -46,6 +46,7 @@ export default function UsuariosConfigPage() {
   const [newRole, setNewRole] = useState<UserRole>('VENDEDOR');
   const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resendingInviteEmail, setResendingInviteEmail] = useState<string | null>(null);
 
   const isDemo = !company || company.id === 'a0000000-0000-0000-0000-000000000001' || company.id === 'demo-company';
   const targetCompanyId = company?.id || user?.company_id || '';
@@ -264,6 +265,40 @@ export default function UsuariosConfigPage() {
     }
   };
 
+  const handleResendInvite = async (targetUser: Profile) => {
+    if (!targetUser.email) return;
+    setResendingInviteEmail(targetUser.email);
+
+    try {
+      const companyIdToUse = targetCompanyId || 'demo-company';
+      const targetCompanyName = company?.trade_name || company?.name || 'Minha Empresa';
+
+      const res = await fetch('/api/auth/convite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: targetUser.name,
+          email: targetUser.email,
+          role: targetUser.role,
+          companyId: companyIdToUse,
+          companyName: targetCompanyName,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFeedbackMessage({ type: 'success', text: `Convite reenviado com sucesso para ${targetUser.email} via Brevo!` });
+      } else {
+        setFeedbackMessage({ type: 'error', text: data.message || 'Erro ao reenviar convite via Brevo.' });
+      }
+    } catch (err: any) {
+      setFeedbackMessage({ type: 'error', text: 'Falha na conexão ao reenviar convite.' });
+    } finally {
+      setResendingInviteEmail(null);
+      setTimeout(() => setFeedbackMessage(null), 4500);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Feedback Banner */}
@@ -424,8 +459,23 @@ export default function UsuariosConfigPage() {
                           <>
                             <button
                               type="button"
+                              onClick={() => handleResendInvite(u)}
+                              disabled={resendingInviteEmail === u.email}
+                              className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                              title="Reenviar e-mail de convite via Brevo"
+                            >
+                              {resendingInviteEmail === u.email ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Send className="w-3 h-3" />
+                              )}
+                              <span>Reenviar Convite</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => toggleUserStatus(u.id)}
-                              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer ml-1"
                             >
                               {u.active ? 'Desativar' : 'Reativar'}
                             </button>

@@ -34,6 +34,8 @@ import {
   Share2,
   MessageCircle,
   Building2,
+  Send,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function ProfissionaisPage() {
@@ -287,6 +289,44 @@ export default function ProfissionaisPage() {
     reader.readAsDataURL(file);
   };
 
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleResendProfessionalInvite = async (prof: Professional) => {
+    if (!prof.email) return;
+    setResendingEmail(prof.email);
+
+    try {
+      const targetCompanyId = currentCompany?.id || currentUser?.company_id || 'demo-company';
+      const targetCompanyName = currentCompany?.trade_name || currentCompany?.name || currentUser?.name || 'NegociaPro';
+
+      const res = await fetch('/api/auth/convite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: prof.name,
+          email: prof.email.trim(),
+          phone: prof.phone || '',
+          role: 'VENDEDOR',
+          companyId: targetCompanyId,
+          companyName: targetCompanyName,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFeedbackMessage({ type: 'success', text: `Convite reenviado com sucesso para ${prof.email} via Brevo!` });
+      } else {
+        setFeedbackMessage({ type: 'error', text: data.message || 'Erro ao reenviar convite via Brevo.' });
+      }
+    } catch {
+      setFeedbackMessage({ type: 'error', text: 'Falha de comunicação ao reenviar convite.' });
+    } finally {
+      setResendingEmail(null);
+      setTimeout(() => setFeedbackMessage(null), 4500);
+    }
+  };
+
   // Totais Consolidados
   const totalCommissionEarned = professionals.reduce((acc, p) => acc + (p.commission_earned || 0), 0);
   const totalCommissionPaid = professionals.reduce((acc, p) => acc + (p.commission_paid || 0), 0);
@@ -294,6 +334,26 @@ export default function ProfissionaisPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Feedback Banner */}
+      {feedbackMessage && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-between animate-in fade-in ${
+            feedbackMessage.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <span>{feedbackMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setFeedbackMessage(null)}
+            className="text-slate-400 hover:text-slate-600 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -512,6 +572,23 @@ export default function ProfissionaisPage() {
 
               {/* Ações */}
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                {prof.email && (
+                  <button
+                    type="button"
+                    onClick={() => handleResendProfessionalInvite(prof)}
+                    disabled={resendingEmail === prof.email}
+                    className="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                    title="Reenviar e-mail oficial de convite/ativação via Brevo"
+                  >
+                    {resendingEmail === prof.email ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>Reenviar Convite</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => openEditModal(prof)}
