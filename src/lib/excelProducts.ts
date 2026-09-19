@@ -128,7 +128,7 @@ export async function downloadProductExcelTemplate() {
 
   // Validação de Dados Nativa (Dropdowns no Excel)
   // Coluna D: Unidade *
-  wsData.dataValidations.add('D2:D5000', {
+  (wsData as any).dataValidations.add('D2:D5000', {
     type: 'list',
     allowBlank: false,
     formulae: ['"UN,KG,G,L,ML,CX,PCT,FD,DZ,PAR,M,M²,M³,SC,RL,MIL,BD"'],
@@ -138,7 +138,7 @@ export async function downloadProductExcelTemplate() {
   });
 
   // Coluna K: Tipo de Comissão
-  wsData.dataValidations.add('K2:K5000', {
+  (wsData as any).dataValidations.add('K2:K5000', {
     type: 'list',
     allowBlank: true,
     formulae: ['"PERCENTUAL,FIXA,SEM_COMISSAO"'],
@@ -407,7 +407,7 @@ export async function exportProductsToFile(products: Product[], format: 'xlsx' |
   const maxRow = Math.max(exportData.length + 500, 2000);
 
   // Coluna E: Unidade
-  ws.dataValidations.add(`E2:E${maxRow}`, {
+  (ws as any).dataValidations.add(`E2:E${maxRow}`, {
     type: 'list',
     allowBlank: false,
     formulae: ['"UN,KG,G,L,ML,CX,PCT,FD,DZ,PAR,M,M²,M³,SC,RL,MIL,BD"'],
@@ -417,7 +417,7 @@ export async function exportProductsToFile(products: Product[], format: 'xlsx' |
   });
 
   // Coluna L: Tipo de Comissão
-  ws.dataValidations.add(`L2:L${maxRow}`, {
+  (ws as any).dataValidations.add(`L2:L${maxRow}`, {
     type: 'list',
     allowBlank: false,
     formulae: ['"PERCENTUAL,FIXA,SEM_COMISSAO"'],
@@ -427,7 +427,7 @@ export async function exportProductsToFile(products: Product[], format: 'xlsx' |
   });
 
   // Coluna N: Status
-  ws.dataValidations.add(`N2:N${maxRow}`, {
+  (ws as any).dataValidations.add(`N2:N${maxRow}`, {
     type: 'list',
     allowBlank: false,
     formulae: ['"ATIVO,INATIVO"'],
