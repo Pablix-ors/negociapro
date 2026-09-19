@@ -164,18 +164,23 @@ export function validateImportedProducts(
     const rawStatus = String(row['Status'] || 'ATIVO').trim().toUpperCase();
     const active = rawStatus !== 'INATIVO';
 
-    // Validações
+    // Validações básicas (comuns a novos e atualizações)
     if (!name) {
       errors.push({ row: rowNumber, field: 'Nome', message: 'Nome do produto é obrigatório.' });
       return;
     }
 
-    if (isNaN(sellingPrice) || sellingPrice <= 0) {
+    // Detecta se é uma atualização antes de validar preço
+    const isUpdate = sku !== '' && existingSkuMap.has(sku);
+
+    // Para NOVOS produtos, preço de venda > 0 é obrigatório
+    // Para ATUALIZAÇÕES, permite preço 0 (o produto já existe no sistema)
+    if (!isUpdate && (isNaN(sellingPrice) || sellingPrice <= 0)) {
       errors.push({ row: rowNumber, field: 'Preço Venda', message: 'Preço de venda deve ser maior que zero.', value: sellingPrice });
       return;
     }
 
-    if (!isNaN(minPrice) && minPrice > sellingPrice) {
+    if (!isNaN(minPrice) && minPrice > sellingPrice && sellingPrice > 0) {
       errors.push({ row: rowNumber, field: 'Preço Mínimo', message: 'Preço mínimo não pode superar o preço de venda.', value: minPrice });
       return;
     }
@@ -188,7 +193,7 @@ export function validateImportedProducts(
       brand: brand || null,
       description: String(row['Descrição'] || row['Descricao'] || '').trim() || null,
       cost_price: isNaN(costPrice) ? 0 : costPrice,
-      selling_price: sellingPrice,
+      selling_price: isNaN(sellingPrice) ? 0 : sellingPrice,
       min_price: !isNaN(minPrice) ? minPrice : sellingPrice,
       current_stock: isNaN(currentStock) ? 0 : currentStock,
       min_stock: isNaN(minStock) ? 0 : minStock,
@@ -199,7 +204,7 @@ export function validateImportedProducts(
     };
 
     // Se o SKU já existe no sistema → é uma atualização, não um novo produto
-    if (sku && existingSkuMap.has(sku)) {
+    if (isUpdate) {
       const existingId = existingSkuMap.get(sku)!;
       updateProducts.push({ id: existingId, ...productData });
       return;
