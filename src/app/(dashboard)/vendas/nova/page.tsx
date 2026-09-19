@@ -24,6 +24,11 @@ import {
   RotateCcw,
   Lock,
   Key,
+  Search,
+  Filter,
+  ChevronDown,
+  Check,
+  Building2,
 } from 'lucide-react';
 
 interface CartItem {
@@ -69,6 +74,33 @@ function NovaVendaForm() {
   const [paymentMethod, setPaymentMethod] = useState<string>('PIX');
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [autoLoadedNotice, setAutoLoadedNotice] = useState<string | null>(null);
+
+  // Estados de busca e filtros no seletor de Clientes
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<'ALL' | 'PF' | 'PJ'>('ALL');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const customerDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Estados de busca e filtros no seletor de Produtos
+  const [productSearch, setProductSearch] = useState('');
+  const [productBrandFilter, setProductBrandFilter] = useState<string>('ALL');
+  const [productSortBy, setProductSortBy] = useState<'NAME' | 'PRICE_ASC' | 'PRICE_DESC' | 'STOCK_DESC'>('NAME');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
+  const productDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Fechar dropdowns ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target as Node)) {
+        setIsCustomerDropdownOpen(false);
+      }
+      if (productDropdownRef.current && !productDropdownRef.current.contains(event.target as Node)) {
+        setIsProductDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Rastrear se já fizemos a carga inicial dos produtos do cliente
   const initializedRef = React.useRef(false);
@@ -194,6 +226,49 @@ function NovaVendaForm() {
   const currentCustomer = customers.find((c) => c.id === selectedCustomerId);
   const currentProfessional = professionals.find((p) => p.id === selectedProfessionalId);
   const currentProduct = products.find((p) => p.id === selectedProductId);
+
+  // Lista de marcas disponíveis para o filtro de produtos
+  const availableBrands = React.useMemo(() => {
+    return Array.from(new Set(products.map((p) => p.brand).filter(Boolean) as string[])).sort();
+  }, [products]);
+
+  // Clientes filtrados por busca textual (nome, razão social, documento, cidade) e tipo (PF/PJ)
+  const filteredCustomers = React.useMemo(() => {
+    return customers.filter((c) => {
+      const q = customerSearch.trim().toLowerCase();
+      const matchesText =
+        !q ||
+        (c.name && c.name.toLowerCase().includes(q)) ||
+        (c.trade_name && c.trade_name.toLowerCase().includes(q)) ||
+        (c.document && c.document.includes(q)) ||
+        (c.city && c.city.toLowerCase().includes(q));
+
+      const matchesType = customerTypeFilter === 'ALL' || c.type === customerTypeFilter;
+      return matchesText && matchesType;
+    });
+  }, [customers, customerSearch, customerTypeFilter]);
+
+  // Produtos filtrados por busca textual (nome, código, marca), marca e ordenados por nome/preço/estoque
+  const filteredProducts = React.useMemo(() => {
+    const list = products.filter((p) => {
+      const q = productSearch.trim().toLowerCase();
+      const matchesText =
+        !q ||
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.sku && p.sku.toLowerCase().includes(q)) ||
+        (p.brand && p.brand.toLowerCase().includes(q));
+
+      const matchesBrand = productBrandFilter === 'ALL' || p.brand === productBrandFilter;
+      return matchesText && matchesBrand;
+    });
+
+    return list.sort((a, b) => {
+      if (productSortBy === 'PRICE_ASC') return a.selling_price - b.selling_price;
+      if (productSortBy === 'PRICE_DESC') return b.selling_price - a.selling_price;
+      if (productSortBy === 'STOCK_DESC') return b.current_stock - a.current_stock;
+      return a.name.localeCompare(b.name, 'pt-BR');
+    });
+  }, [products, productSearch, productBrandFilter, productSortBy]);
 
   // Atualizar preço padrão ao selecionar outro produto
   const handleProductChange = (newProductId: string) => {
@@ -405,18 +480,116 @@ function NovaVendaForm() {
                 </div>
               ) : (
                 <>
-                  <div className="relative">
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(e) => handleCustomerChange(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-all"
+                  <div className="relative" ref={customerDropdownRef}>
+                    {/* Botão Gatilho do Dropdown com Informações do Cliente Selecionado */}
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomerDropdownOpen(!isCustomerDropdownOpen)}
+                      className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-xl px-4 py-3 text-left flex items-center justify-between transition-all focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-2xs"
                     >
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.trade_name ? `${c.trade_name} (${c.name})` : c.name} — {c.document} [{c.type}]
-                        </option>
-                      ))}
-                    </select>
+                      {currentCustomer ? (
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className={`p-2 rounded-lg shrink-0 ${currentCustomer.type === 'PJ' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {currentCustomer.type === 'PJ' ? <Building2 className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 text-xs block truncate">
+                              {currentCustomer.trade_name ? `${currentCustomer.trade_name} (${currentCustomer.name})` : currentCustomer.name}
+                            </span>
+                            <span className="text-[11px] text-slate-500 block truncate">
+                              {currentCustomer.document} • {currentCustomer.city || 'Cidade não inf.'} [{currentCustomer.type}]
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500">Selecione um cliente para a venda...</span>
+                      )}
+                      <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 ml-2 transition-transform duration-200 ${isCustomerDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Menu Dropdown Suspenso com Busca e Filtros */}
+                    {isCustomerDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-40 p-3 animate-in fade-in zoom-in-95 space-y-2.5">
+                        {/* Campo de Busca em Tempo Real */}
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            autoFocus
+                            value={customerSearch}
+                            onChange={(e) => setCustomerSearch(e.target.value)}
+                            placeholder="Buscar cliente por nome, CNPJ/CPF ou cidade..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        {/* Filtros por Tipo de Cliente (Todos / PF / PJ) */}
+                        <div className="flex items-center space-x-1.5 pt-1">
+                          {(['ALL', 'PF', 'PJ'] as const).map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setCustomerTypeFilter(t)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                                customerTypeFilter === t
+                                  ? 'bg-blue-600 text-white shadow-2xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+                              }`}
+                            >
+                              {t === 'ALL' ? 'Todos' : t === 'PF' ? 'Pessoa Física (PF)' : 'Pessoa Jurídica (PJ)'}
+                            </button>
+                          ))}
+                          <span className="text-[10px] text-slate-400 ml-auto font-semibold">
+                            {filteredCustomers.length} encontrado(s)
+                          </span>
+                        </div>
+
+                        {/* Lista Rolável de Clientes */}
+                        <div className="max-h-60 overflow-y-auto space-y-1 pt-1 divide-y divide-slate-100 dark-scrollbar">
+                          {filteredCustomers.length === 0 ? (
+                            <div className="py-6 text-center text-xs text-slate-400">
+                              Nenhum cliente corresponde aos filtros de busca.
+                            </div>
+                          ) : (
+                            filteredCustomers.map((c) => {
+                              const isSelected = c.id === selectedCustomerId;
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    handleCustomerChange(c.id);
+                                    setIsCustomerDropdownOpen(false);
+                                  }}
+                                  className={`w-full p-2.5 rounded-xl text-left flex items-center justify-between transition-colors ${
+                                    isSelected ? 'bg-blue-50/80 border border-blue-200/80' : 'hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-2.5 min-w-0">
+                                    <div className={`p-1.5 rounded-lg shrink-0 ${c.type === 'PJ' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                      {c.type === 'PJ' ? <Building2 className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <span className={`text-xs block truncate ${isSelected ? 'font-black text-blue-900' : 'font-bold text-slate-800'}`}>
+                                        {c.trade_name ? `${c.trade_name} (${c.name})` : c.name}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 block truncate">
+                                        {c.document} • {c.city || 'Sem cidade'}/{c.state || ''}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {isSelected && (
+                                    <span className="p-1 rounded-full bg-blue-600 text-white shrink-0 ml-2">
+                                      <Check className="w-3 h-3 stroke-[3]" />
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {currentCustomer && (
@@ -516,19 +689,184 @@ function NovaVendaForm() {
                 </button>
               </div>
             ) : (
-              <div>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => handleProductChange(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-all"
+              <div className="relative" ref={productDropdownRef}>
+                {/* Botão Gatilho do Dropdown com Foto e Detalhes do Produto Selecionado */}
+                <button
+                  type="button"
+                  onClick={() => setIsProductDropdownOpen(!isProductDropdownOpen)}
+                  className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-xl px-4 py-3 text-left flex items-center justify-between transition-all focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-2xs"
                 >
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.sku ? `[${p.sku}]` : ''} — Tabela: {formatCurrency(p.selling_price)} (Estoque: {p.current_stock} {p.unit})
-                    </option>
-                  ))}
-                </select>
+                  {currentProduct ? (
+                    <div className="flex items-center space-x-3 min-w-0">
+                      {currentProduct.image_url ? (
+                        <img
+                          src={currentProduct.image_url}
+                          alt={currentProduct.name}
+                          className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                          <Package className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <span className="font-bold text-slate-900 text-xs block truncate">
+                          {currentProduct.name}
+                        </span>
+                        <span className="text-[11px] text-slate-500 block truncate">
+                          {currentProduct.brand ? `Marca: ${currentProduct.brand} • ` : ''}
+                          Tabela: <strong className="text-slate-800">{formatCurrency(currentProduct.selling_price)}</strong> • 
+                          Estoque: <strong className={currentProduct.current_stock <= currentProduct.min_stock ? 'text-amber-600' : 'text-slate-700'}>{currentProduct.current_stock} {currentProduct.unit}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-500">Selecione um produto do catálogo...</span>
+                  )}
+                  <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 ml-2 transition-transform duration-200 ${isProductDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
 
+                {/* Dropdown com Barra de Busca, Filtro de Marca e Ordenação */}
+                {isProductDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-40 p-3.5 animate-in fade-in zoom-in-95 space-y-3">
+                    {/* Linha de Busca */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        autoFocus
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        placeholder="Buscar produto por nome, código SKU, código de barras ou marca..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3.5 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {/* Linha de Filtros: Marcas e Ordenação por Preço / Estoque */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      {/* Filtro por Marca */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1">
+                          <Filter className="w-3 h-3" />
+                          <span>Marca</span>
+                        </label>
+                        <select
+                          value={productBrandFilter}
+                          onChange={(e) => setProductBrandFilter(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="ALL">Todas as Marcas ({availableBrands.length})</option>
+                          {availableBrands.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Ordenação */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1">
+                          <DollarSign className="w-3 h-3" />
+                          <span>Ordenar por</span>
+                        </label>
+                        <select
+                          value={productSortBy}
+                          onChange={(e) => setProductSortBy(e.target.value as any)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="NAME">Nome (A a Z)</option>
+                          <option value="PRICE_ASC">Menor Preço (Tabela)</option>
+                          <option value="PRICE_DESC">Maior Preço (Tabela)</option>
+                          <option value="STOCK_DESC">Maior Estoque Disponível</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                      <span>{filteredProducts.length} produto(s) encontrado(s)</span>
+                      {(productSearch || productBrandFilter !== 'ALL') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProductSearch('');
+                            setProductBrandFilter('ALL');
+                          }}
+                          className="text-blue-600 hover:text-blue-800 font-bold"
+                        >
+                          Limpar filtros
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Lista Rolável de Produtos com Destaque de Preço, Marca e Estoque */}
+                    <div className="max-h-64 overflow-y-auto space-y-1.5 pt-1 divide-y divide-slate-100 dark-scrollbar">
+                      {filteredProducts.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-slate-400">
+                          Nenhum produto encontrado com os filtros informados.
+                        </div>
+                      ) : (
+                        filteredProducts.map((p) => {
+                          const isSelected = p.id === selectedProductId;
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                handleProductChange(p.id);
+                                setIsProductDropdownOpen(false);
+                              }}
+                              className={`w-full p-2.5 rounded-xl text-left flex items-center justify-between transition-colors ${
+                                isSelected ? 'bg-blue-50/80 border border-blue-200/80' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                {p.image_url ? (
+                                  <img
+                                    src={p.image_url}
+                                    alt={p.name}
+                                    className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                                    <Package className="w-4 h-4" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <span className={`text-xs block truncate ${isSelected ? 'font-black text-blue-900' : 'font-bold text-slate-900'}`}>
+                                    {p.name}
+                                  </span>
+                                  <div className="flex items-center space-x-2 text-[10px] text-slate-500 mt-0.5">
+                                    {p.brand && <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium">{p.brand}</span>}
+                                    {p.sku && <span>SKU: {p.sku}</span>}
+                                    <span>• {p.unit}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0 ml-3">
+                                <span className="text-xs font-black text-slate-900 block">
+                                  {formatCurrency(p.selling_price)}
+                                </span>
+                                <span className={`text-[10px] block font-semibold ${p.current_stock <= p.min_stock ? 'text-amber-600' : 'text-slate-400'}`}>
+                                  Estoque: {p.current_stock}
+                                </span>
+                              </div>
+
+                              {isSelected && (
+                                <span className="p-1 rounded-full bg-blue-600 text-white shrink-0 ml-2">
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Banner com Detalhes do Produto Selecionado */}
                 {currentProduct && (
                   <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center space-x-3">
                     {currentProduct.image_url ? (
