@@ -74,6 +74,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setIsLoading(false);
+
+    // 3. Reconciliar perfil e empresa em segundo plano com o Supabase (para que alterações no banco reflitam de imediato)
+    if (savedUser && !savedImpersonation) {
+      try {
+        const parsedU: Profile = JSON.parse(savedUser);
+        if (parsedU.id || parsedU.email) {
+          fetch(`/api/auth/me?userId=${encodeURIComponent(parsedU.id || '')}&email=${encodeURIComponent(parsedU.email || '')}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (data && data.success && data.user) {
+                setUser((prev) => {
+                  if (
+                    prev?.name !== data.user.name ||
+                    prev?.role !== data.user.role ||
+                    prev?.company_id !== data.user.company_id
+                  ) {
+                    localStorage.setItem('negociapro_user', JSON.stringify(data.user));
+                    return data.user;
+                  }
+                  return prev;
+                });
+                if (data.company) {
+                  setCompany((prev) => {
+                    if (
+                      prev?.id !== data.company.id ||
+                      prev?.name !== data.company.name ||
+                      prev?.status !== data.company.status
+                    ) {
+                      localStorage.setItem('negociapro_company', JSON.stringify(data.company));
+                      return data.company;
+                    }
+                    return prev;
+                  });
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }
   }, []);
 
   useEffect(() => {
@@ -90,17 +130,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('negociapro_user');
           localStorage.removeItem('negociapro_company');
         } else if (session?.user) {
-          // Se houver usuário no Supabase mas não no state local, reconciliar
-          setUser((prev) => {
-            if (prev) return prev;
-            const savedUser = localStorage.getItem('negociapro_user');
-            if (savedUser) {
-              try {
-                return JSON.parse(savedUser);
-              } catch {}
-            }
-            return null;
-          });
+          // Se houver usuário no Supabase, reconciliar dados com o banco
+          fetch(`/api/auth/me?userId=${session.user.id}&email=${encodeURIComponent(session.user.email || '')}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (data && data.success && data.user) {
+                setUser(data.user);
+                localStorage.setItem('negociapro_user', JSON.stringify(data.user));
+                if (data.company) {
+                  setCompany(data.company);
+                  localStorage.setItem('negociapro_company', JSON.stringify(data.company));
+                }
+              }
+            })
+            .catch(() => {});
         }
       });
 

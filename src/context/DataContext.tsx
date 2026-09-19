@@ -166,8 +166,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setProducts(isDemo ? DEMO_PRODUCTS : []);
     }
 
-    // Se a empresa possui ID real (como Ração mais barato ltda), carregar produtos reais do Supabase / API
+    // Se a empresa possui ID real (ex: Ração mais barato ltda ou criada pelo usuário), carregar dados reais do Supabase / API
     if (company?.id && !isDemo) {
+      // 1. Produtos
       fetch(`/api/products?company_id=${company.id}`)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -196,6 +197,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               .catch(() => {});
           }
         });
+
+      // 2. Clientes
+      fetch(`/api/customers?company_id=${company.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.customers)) {
+            setCustomers(data.customers);
+            safeSetItem(`negociapro_customers${key}`, JSON.stringify(data.customers));
+          }
+        })
+        .catch(() => {});
+
+      // 3. Profissionais
+      fetch(`/api/professionals?company_id=${company.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.professionals)) {
+            setProfessionals(data.professionals);
+            safeSetItem(`negociapro_professionals${key}`, JSON.stringify(data.professionals));
+          }
+        })
+        .catch(() => {});
+
+      // 4. Vendas
+      fetch(`/api/sales?company_id=${company.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.sales)) {
+            setSales(data.sales);
+            safeSetItem(`negociapro_sales${key}`, JSON.stringify(data.sales));
+          }
+        })
+        .catch(() => {});
     }
 
     try {
@@ -334,9 +368,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addCustomer = (customerData: Omit<Customer, 'id' | 'company_id' | 'created_at' | 'updated_at'>): Customer => {
+    const tempId = `cust-${Date.now()}`;
     const newCustomer: Customer = {
       ...customerData,
-      id: `cust-${Date.now()}`,
+      id: tempId,
       company_id: company?.id || 'demo-company',
       active: true,
       total_purchased: 0,
@@ -347,17 +382,51 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
     const updated = [newCustomer, ...customers];
     saveCust(updated);
+
+    // Sincronizar com Supabase se não for empresa demo
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id, customer: newCustomer }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && data.customer) {
+            setCustomers((prev) => prev.map((c) => (c.id === tempId ? data.customer : c)));
+          }
+        })
+        .catch((err) => console.warn('Falha ao persistir cliente no Supabase:', err));
+    }
+
     return newCustomer;
   };
 
   const updateCustomer = (id: string, updatedFields: Partial<Customer>) => {
     const updated = customers.map(c => (c.id === id ? { ...c, ...updatedFields, updated_at: new Date().toISOString() } : c));
     saveCust(updated);
+
+    if (company?.id && !isDemoCompany) {
+      const target = updated.find((c) => c.id === id);
+      if (target) {
+        fetch('/api/customers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, customer: target }),
+        }).catch((err) => console.warn('Falha ao atualizar cliente no Supabase:', err));
+      }
+    }
   };
 
   const deleteCustomer = (id: string) => {
     const updated = customers.filter(c => c.id !== id);
     saveCust(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch(`/api/customers?id=${encodeURIComponent(id)}&company_id=${encodeURIComponent(company.id)}`, {
+        method: 'DELETE',
+      }).catch((err) => console.warn('Falha ao deletar cliente no Supabase:', err));
+    }
   };
 
   const addProduct = (productData: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>): Product => {
@@ -430,9 +499,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Módulo de Profissionais
   const addProfessional = (profData: Omit<Professional, 'id' | 'company_id' | 'created_at' | 'updated_at'>): Professional => {
+    const tempId = `prof-${Date.now()}`;
     const newProf: Professional = {
       ...profData,
-      id: `prof-${Date.now()}`,
+      id: tempId,
       company_id: company?.id || 'demo-company',
       active: true,
       sales_count: 0,
@@ -445,22 +515,66 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
     const updated = [newProf, ...professionals];
     saveProfsState(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/professionals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id, professional: newProf }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && data.professional) {
+            setProfessionals((prev) => prev.map((p) => (p.id === tempId ? data.professional : p)));
+          }
+        })
+        .catch((err) => console.warn('Falha ao persistir profissional no Supabase:', err));
+    }
+
     return newProf;
   };
 
   const updateProfessional = (id: string, updatedFields: Partial<Professional>) => {
     const updated = professionals.map(p => (p.id === id ? { ...p, ...updatedFields, updated_at: new Date().toISOString() } : p));
     saveProfsState(updated);
+
+    if (company?.id && !isDemoCompany) {
+      const target = updated.find((p) => p.id === id);
+      if (target) {
+        fetch('/api/professionals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, professional: target }),
+        }).catch((err) => console.warn('Falha ao atualizar profissional no Supabase:', err));
+      }
+    }
   };
 
   const deactivateProfessional = (id: string) => {
     const updated = professionals.map(p => (p.id === id ? { ...p, active: false, updated_at: new Date().toISOString() } : p));
     saveProfsState(updated);
+
+    if (company?.id && !isDemoCompany) {
+      const target = updated.find((p) => p.id === id);
+      if (target) {
+        fetch('/api/professionals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, professional: target }),
+        }).catch((err) => console.warn('Falha ao desativar profissional no Supabase:', err));
+      }
+    }
   };
 
   const deleteProfessional = (id: string) => {
     const updated = professionals.filter(p => p.id !== id);
     saveProfsState(updated);
+
+    if (company?.id && !isDemoCompany) {
+      fetch(`/api/professionals?id=${encodeURIComponent(id)}&company_id=${encodeURIComponent(company.id)}`, {
+        method: 'DELETE',
+      }).catch((err) => console.warn('Falha ao deletar profissional no Supabase:', err));
+    }
   };
 
   // Finalização da Venda com Snapshot de Comissão e Vinculação de Profissional
@@ -669,6 +783,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     saveHistoryState(newHistoryMap);
 
+    // 6. Sincronizar venda com Supabase se não for empresa de demonstração
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: company.id,
+          sale: createdSale,
+          items: enrichedItems,
+        }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && data.sale) {
+            setSales((prev) => prev.map((s) => (s.id === saleId ? data.sale : s)));
+          }
+        })
+        .catch((err) => console.warn('Falha ao persistir venda no Supabase:', err));
+    }
+
     return createdSale;
   };
 
@@ -689,6 +823,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return c;
     });
     saveCommsState(updatedComms);
+
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/sales', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, company_id: company.id, status: 'CANCELLED' }),
+      }).catch((err) => console.warn('Falha ao cancelar venda no Supabase:', err));
+    }
   };
 
   const markCommissionAsPaid = (commissionId: string, paidAmount?: number, notes?: string) => {
