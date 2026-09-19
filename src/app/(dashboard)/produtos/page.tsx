@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 
 export default function ProdutosPage() {
-  const { products, adjustStock, addProduct, updateProduct } = useData();
+  const { products, adjustStock, addProduct, updateProduct, bulkImportProducts } = useData();
   const [filterQuery, setFilterQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'NORMAL'>('ALL');
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -127,24 +127,15 @@ export default function ProdutosPage() {
     if (previewProducts.length === 0 && previewUpdates.length === 0) return;
 
     setIsImporting(true);
-    let addedCount = 0;
-    let updatedCount = 0;
 
-    previewProducts.forEach((prod) => {
-      addProduct(prod);
-      addedCount++;
-    });
-
-    previewUpdates.forEach(({ id, ...fields }) => {
-      updateProduct(id, fields);
-      updatedCount++;
-    });
+    // Uma única operação atômica — evita condição de corrida com estado stale do React
+    const { added, updated } = bulkImportProducts(previewProducts, previewUpdates);
 
     setIsImporting(false);
 
     const parts: string[] = [];
-    if (addedCount > 0) parts.push(`${addedCount} produto(s) adicionado(s)`);
-    if (updatedCount > 0) parts.push(`${updatedCount} produto(s) atualizado(s)`);
+    if (added > 0) parts.push(`${added} produto(s) adicionado(s)`);
+    if (updated > 0) parts.push(`${updated} produto(s) atualizado(s)`);
     setImportSuccessMessage(parts.join(' e ') + ' com sucesso!');
 
     setPreviewProducts([]);

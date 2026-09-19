@@ -39,6 +39,10 @@ interface DataContextType {
   deleteCustomer: (id: string) => void;
   addProduct: (product: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Product;
   updateProduct: (id: string, product: Partial<Product>) => void;
+  bulkImportProducts: (
+    newProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>,
+    updateProducts: Array<{ id: string } & Partial<Product>>
+  ) => { added: number; updated: number };
   adjustStock: (productId: string, quantityChange: number, reason: string) => void;
   addProfessional: (prof: Omit<Professional, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Professional;
   updateProfessional: (id: string, prof: Partial<Professional>) => void;
@@ -374,6 +378,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     saveProd(updated);
   };
 
+  // Importação em lote atômica: todos os novos e atualizações são aplicados
+  // em um único setProducts/saveProd para evitar condição de corrida com estado stale
+  const bulkImportProducts = (
+    newProds: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>,
+    updateProds: Array<{ id: string } & Partial<Product>>
+  ): { added: number; updated: number } => {
+    const now = new Date().toISOString();
+
+    // Mapa de id -> campos atualizados para lookup O(1)
+    const updateMap = new Map<string, Partial<Product>>();
+    updateProds.forEach(({ id, ...fields }) => updateMap.set(id, fields));
+
+    // 1. Aplica as atualizações nos produtos existentes
+    const merged = products.map(p => {
+      if (updateMap.has(p.id)) {
+        return { ...p, ...updateMap.get(p.id)!, updated_at: now };
+      }
+      return p;
+    });
+
+    // 2. Adiciona os produtos novos
+    const created: Product[] = newProds.map(data => ({
+      ...data,
+      id: `prod-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      company_id: company?.id || 'demo-company',
+      active: true,
+      created_at: now,
+      updated_at: now,
+    }));
+
+    saveProd([...created, ...merged]);
+    return { added: created.length, updated: updateProds.length };
+  };
+
   const adjustStock = (productId: string, quantityChange: number, reason: string) => {
     const updated = products.map(p => {
       if (p.id === productId) {
@@ -707,6 +745,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         deleteCustomer,
         addProduct,
         updateProduct,
+        bulkImportProducts,
         adjustStock,
         addProfessional,
         updateProfessional,
