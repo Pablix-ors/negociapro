@@ -40,6 +40,8 @@ interface DataContextType {
   addProduct: (product: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Product;
   updateProduct: (id: string, product: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
+  bulkUpdateProducts: (ids: string[], updates: Partial<Product>) => Promise<void>;
+  bulkDeleteProducts: (ids: string[]) => Promise<void>;
   bulkImportProducts: (
     newProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>,
     updateProducts: Array<{ id: string } & Partial<Product>>
@@ -633,6 +635,65 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Edição em massa de múltiplos produtos selecionados
+  const bulkUpdateProducts = async (ids: string[], updates: Partial<Product>): Promise<void> => {
+    if (!ids || ids.length === 0) return;
+    const idsSet = new Set(ids);
+    const now = new Date().toISOString();
+
+    const updated = products.map((p) => {
+      if (idsSet.has(p.id)) {
+        return {
+          ...p,
+          ...updates,
+          updated_at: now,
+        };
+      }
+      return p;
+    });
+
+    saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      try {
+        await fetch('/api/products', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: company.id,
+            ids,
+            updates,
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha no update em lote no Supabase:', err);
+      }
+    }
+  };
+
+  // Exclusão em massa de produtos
+  const bulkDeleteProducts = async (ids: string[]): Promise<void> => {
+    if (!ids || ids.length === 0) return;
+    const idsSet = new Set(ids);
+    const updated = products.filter((p) => !idsSet.has(p.id));
+    saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      try {
+        await fetch('/api/products', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: company.id,
+            ids,
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha na exclusão em massa no Supabase:', err);
+      }
+    }
+  };
+
   // Importação em lote atômica: todos os novos e atualizações são aplicados
   // em um único setProducts/saveProd para evitar condição de corrida com estado stale
   const bulkImportProducts = (
@@ -666,12 +727,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const finalProducts = [...created, ...merged];
     saveProd(finalProducts);
 
-    if (company?.id && !isDemoCompany && created.length > 0) {
-      fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id: company.id, products: created }),
-      }).catch((err) => console.warn('Falha ao sincronizar lote de produtos no Supabase:', err));
+    if (company?.id && !isDemoCompany) {
+      if (created.length > 0) {
+        fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, products: created }),
+        }).catch((err) => console.warn('Falha ao sincronizar novos produtos no Supabase:', err));
+      }
+
+      if (updateProds.length > 0) {
+        fetch('/api/products', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, products: updateProds }),
+        }).catch((err) => console.warn('Falha ao sincronizar lote de produtos atualizados no Supabase:', err));
+      }
     }
 
     return { added: created.length, updated: updateProds.length };
@@ -1098,6 +1169,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         addProduct,
         updateProduct,
         deleteProduct,
+        bulkUpdateProducts,
+        bulkDeleteProducts,
         bulkImportProducts,
         adjustStock,
         addProfessional,

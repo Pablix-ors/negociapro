@@ -112,22 +112,78 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT: Atualizar produto no banco de dados Supabase
+// PUT: Atualizar produto individual ou em lote no banco de dados Supabase
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { company_id, id, ...updateFields } = body;
+    const { company_id, id, ids, updates, products, ...updateFields } = body;
 
-    if (!company_id || !id) {
-      return NextResponse.json({ success: false, error: 'company_id e id são obrigatórios' }, { status: 400 });
+    if (!company_id) {
+      return NextResponse.json({ success: false, error: 'company_id é obrigatório' }, { status: 400 });
     }
 
     const supabase = getAdminClient();
+    const now = new Date().toISOString();
+
+    // 1. Atualização em massa com os mesmos campos para múltiplos IDs (Edição em Massa)
+    if (Array.isArray(ids) && ids.length > 0 && updates) {
+      const allowedUpdates: Record<string, any> = {
+        updated_at: now,
+      };
+      if (updates.unit !== undefined) allowedUpdates.unit = updates.unit;
+      if (updates.commission_type !== undefined) allowedUpdates.commission_type = updates.commission_type;
+      if (updates.commission_value !== undefined) allowedUpdates.commission_value = Number(updates.commission_value) || 0;
+      if (updates.brand !== undefined) allowedUpdates.brand = updates.brand ? updates.brand.trim() : null;
+      if (updates.active !== undefined) allowedUpdates.active = updates.active !== false;
+      if (updates.min_stock !== undefined) allowedUpdates.min_stock = Number(updates.min_stock) || 0;
+      if (updates.selling_price !== undefined) allowedUpdates.selling_price = Number(updates.selling_price) || 0;
+      if (updates.min_price !== undefined) allowedUpdates.min_price = Number(updates.min_price) || 0;
+
+      const { data, error } = await supabase
+        .from('products')
+        .update(allowedUpdates)
+        .in('id', ids)
+        .eq('company_id', company_id)
+        .select();
+
+      if (error) {
+        console.error('Erro no update em lote de produtos:', error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, count: data?.length || 0, products: data });
+    }
+
+    // 2. Atualização em lote com dados individuais (Importação / Sincronização de Planilha)
+    if (Array.isArray(products) && products.length > 0) {
+      const updatedList: any[] = [];
+      for (const p of products) {
+        const { id: prodId, ...fields } = p;
+        if (!prodId) continue;
+        const { data, error } = await supabase
+          .from('products')
+          .update({ ...fields, updated_at: now })
+          .eq('id', prodId)
+          .eq('company_id', company_id)
+          .select()
+          .maybeSingle();
+
+        if (data && !error) updatedList.push(data);
+      }
+
+      return NextResponse.json({ success: true, count: updatedList.length, products: updatedList });
+    }
+
+    // 3. Atualização de produto único
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'id ou lista de ids são obrigatórios' }, { status: 400 });
+    }
+
     const { data, error } = await supabase
       .from('products')
       .update({
         ...updateFields,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       })
       .eq('id', id)
       .eq('company_id', company_id)
@@ -144,29 +200,44 @@ export async function PUT(request: Request) {
   }
 }
 
-// DELETE: Deletar produto
+// DELETE: Deletar produto(s)
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const companyId = searchParams.get('company_id');
+    const idsParam = searchParams.get('ids');
+    let companyId = searchParams.get('company_id');
 
-    if (!id || !companyId) {
-      return NextResponse.json({ success: false, error: 'id e company_id são obrigatórios' }, { status: 400 });
+    let idsToDelete: string[] = [];
+    if (id) idsToDelete.push(id);
+    if (idsParam) idsToDelete.push(...idsParam.split(',').map((x) => x.trim()).filter(Boolean));
+
+    // Também aceita corpo JSON caso a requisição envie { ids: string[], company_id }
+    if (idsToDelete.length === 0) {
+      try {
+        const body = await request.json();
+        if (body.ids && Array.isArray(body.ids)) idsToDelete = body.ids;
+        if (body.id) idsToDelete.push(body.id);
+        if (body.company_id) companyId = body.company_id;
+      } catch {}
+    }
+
+    if (!companyId || idsToDelete.length === 0) {
+      return NextResponse.json({ success: false, error: 'company_id e id(s) são obrigatórios' }, { status: 400 });
     }
 
     const supabase = getAdminClient();
     const { error } = await supabase
       .from('products')
       .delete()
-      .eq('id', id)
+      .in('id', idsToDelete)
       .eq('company_id', companyId);
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, count: idsToDelete.length });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
