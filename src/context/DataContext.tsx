@@ -147,7 +147,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedCust = localStorage.getItem(`negociapro_customers${key}`);
       if (savedCust) {
-        setCustomers(JSON.parse(savedCust));
+        const parsedCust = JSON.parse(savedCust);
+        if (Array.isArray(parsedCust) && parsedCust.length > 0) {
+          setCustomers(parsedCust);
+        } else {
+          setCustomers(isDemo ? DEMO_CUSTOMERS : []);
+        }
       } else {
         setCustomers(isDemo ? DEMO_CUSTOMERS : []);
       }
@@ -158,7 +163,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedProd = localStorage.getItem(`negociapro_products${key}`);
       if (savedProd) {
-        setProducts(JSON.parse(savedProd));
+        const parsedProd = JSON.parse(savedProd);
+        if (Array.isArray(parsedProd) && parsedProd.length > 0) {
+          setProducts(parsedProd);
+        } else {
+          setProducts(isDemo ? DEMO_PRODUCTS : []);
+        }
       } else {
         setProducts(isDemo ? DEMO_PRODUCTS : []);
       }
@@ -178,16 +188,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (data && data.success && Array.isArray(data.products) && data.products.length > 0) {
             setProducts(data.products);
             safeSetItem(`negociapro_products${key}`, JSON.stringify(data.products));
-          }
-        })
-        .catch(() => {
-          // Fallback caso esteja offline: verificar se há arquivo estático disponível para esta empresa
-          if (company.name?.toLowerCase().includes('ração mais barato') || company.id === '2bcee844-9475-4175-ae47-e0f6f53dbb09') {
+          } else {
+            // Se o endpoint retornou vazio, tenta o arquivo estático de produtos da empresa
             fetch('/racao_mais_barato_products.json')
-              .then((r) => {
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return r.json();
-              })
+              .then((r) => (r.ok ? r.json() : null))
               .then((cachedList) => {
                 if (Array.isArray(cachedList) && cachedList.length > 0) {
                   setProducts(cachedList);
@@ -196,6 +200,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               })
               .catch(() => {});
           }
+        })
+        .catch(() => {
+          // Fallback caso esteja offline: verificar se há arquivo estático disponível para esta empresa
+          fetch('/racao_mais_barato_products.json')
+            .then((r) => {
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              return r.json();
+            })
+            .then((cachedList) => {
+              if (Array.isArray(cachedList) && cachedList.length > 0) {
+                setProducts(cachedList);
+                safeSetItem(`negociapro_products${key}`, JSON.stringify(cachedList));
+              }
+            })
+            .catch(() => {});
         });
 
       // 2. Clientes
