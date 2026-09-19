@@ -129,9 +129,9 @@ export default function VendasPage() {
           </div>
         ) : (
           <>
-            {/* Tabela Desktop com Scroll Horizontal Garantido */}
-            <div className="hidden lg:block overflow-x-auto pb-2">
-              <table className="w-full text-left text-xs min-w-[960px]">
+            {/* Tabela com Scroll Horizontal Garantido */}
+            <div className="hidden sm:block overflow-x-auto w-full max-w-full pb-3 scrollbar-visible">
+              <table className="w-full text-left text-xs min-w-[1050px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Pedido</th>
@@ -231,7 +231,7 @@ export default function VendasPage() {
             </div>
 
             {/* Modo Card Mobile */}
-            <div className="lg:hidden divide-y divide-slate-100">
+            <div className="sm:hidden divide-y divide-slate-100">
               {filteredSales.map((sale) => (
                 <div key={sale.id} className="p-4 space-y-2.5">
                   <div className="flex items-center justify-between">
