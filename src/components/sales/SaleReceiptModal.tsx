@@ -156,10 +156,10 @@ export default function SaleReceiptModal({
         )}
 
         {/* Área de Visualização com Scroll (Simulando Papel Real) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 flex justify-center">
-          <div className="w-full flex justify-center">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 flex justify-center">
+          <div className="w-full flex justify-center py-2">
             {activeTemplate === 'A4' ? (
-              <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-slate-300 overflow-hidden transition-all">
+              <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-slate-300 transition-all">
                 <SaleReceipt
                   sale={sale}
                   company={company}
@@ -168,7 +168,7 @@ export default function SaleReceiptModal({
                 />
               </div>
             ) : (
-              <div className="bg-white rounded-xl shadow-xl border border-slate-300 p-2 overflow-hidden transition-all">
+              <div className="bg-white rounded-xl shadow-xl border border-slate-300 p-2 transition-all">
                 <SaleReceipt
                   sale={sale}
                   company={company}
