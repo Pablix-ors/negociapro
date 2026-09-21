@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Sale, ReceiptTemplateType } from '@/types/database';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
@@ -12,14 +12,13 @@ import {
   Eye,
   FileText,
   Receipt,
-  Sparkles,
   CheckCircle2,
 } from 'lucide-react';
 
 interface SaleReceiptModalProps {
   sale: Sale;
   onClose: () => void;
-  isInitialSuccess?: boolean; // Se for logo após finalizar venda
+  isInitialSuccess?: boolean;
 }
 
 export default function SaleReceiptModal({
@@ -34,31 +33,148 @@ export default function SaleReceiptModal({
     receiptSettings.template_default || 'A4'
   );
 
-  // Manipulador de Impressão
-  const handlePrint = (template: ReceiptTemplateType) => {
-    // Adicionar classe ao body para selecionar tamanho de página (@page)
-    const className = template === 'THERMAL_80' ? 'print-mode-cupom' : 'print-mode-a4';
-    document.body.classList.add(className);
+  // Refs para capturar o HTML dos comprovantes renderizados
+  const receiptA4Ref = useRef<HTMLDivElement>(null);
+  const receiptThermalRef = useRef<HTMLDivElement>(null);
 
-    // Pequeno atraso para garantir renderização do CSS antes de disparar window.print()
-    setTimeout(() => {
-      window.print();
-      document.body.classList.remove('print-mode-cupom', 'print-mode-a4');
-    }, 100);
+  /**
+   * Abre janela popup isolada com apenas o conteúdo do comprovante.
+   * Isso evita imprimir o dashboard, sidebar, modal e qualquer elemento externo.
+   */
+  const openPrintWindow = (template: ReceiptTemplateType) => {
+    const isA4 = template === 'A4';
+    const ref = isA4 ? receiptA4Ref : receiptThermalRef;
+    const saleNumber = formatSaleNumber(sale.sale_number);
+
+    if (!ref.current) return;
+
+    // Captura o HTML renderizado do comprovante (já com estilos inline via Tailwind JIT)
+    const receiptHtml = ref.current.innerHTML;
+
+    const pageStyles = isA4
+      ? `
+        @page { size: A4 portrait; margin: 8mm; }
+        body { margin: 0; padding: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; }
+      `
+      : `
+        @page { size: 80mm auto; margin: 2mm; }
+        body { margin: 0; padding: 0; background: #fff; width: 80mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }
+      `;
+
+    const fullHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comprovante Não Fiscal - Venda #${saleNumber}</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    ${pageStyles}
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    /* Remove min-width que quebraria a tabela na impressão */
+    .min-w-\\[500px\\] { min-width: 0 !important; }
+    .overflow-x-auto { overflow: visible !important; }
+    @media screen {
+      body { display: flex; justify-content: center; padding: 20px; }
+      .receipt-wrapper { max-width: ${isA4 ? '800px' : '80mm'}; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="receipt-wrapper">
+    ${receiptHtml}
+  </div>
+  <script>
+    // Aguarda o Tailwind carregar antes de imprimir
+    function tryPrint() {
+      if (document.readyState === 'complete') {
+        setTimeout(function() { window.print(); }, 600);
+      } else {
+        window.addEventListener('load', function() {
+          setTimeout(function() { window.print(); }, 600);
+        });
+      }
+    }
+    tryPrint();
+  <\/script>
+</body>
+</html>`;
+
+    const win = window.open(
+      '',
+      `comprovante_${saleNumber}_${isA4 ? 'A4' : 'Cupom'}`,
+      `width=${isA4 ? 900 : 400},height=700,scrollbars=yes,toolbar=no,menubar=no`
+    );
+
+    if (!win) {
+      // fallback blob se popup bloqueado
+      const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      return;
+    }
+
+    win.document.open();
+    win.document.write(fullHtml);
+    win.document.close();
   };
 
-  // Exportar PDF acionando a caixa de diálogo nativa com título sugestivo
+  /**
+   * Exporta como PDF via Salvar Como PDF no diálogo de impressão
+   * (mesmo mecanismo, mas o título é ajustado para sugerir o nome do arquivo)
+   */
   const handleExportPDF = (template: ReceiptTemplateType) => {
-    const originalTitle = document.title;
-    const templateLabel = template === 'THERMAL_80' ? 'Cupom_80mm' : 'A4';
-    document.title = `Comprovante_Venda_${formatSaleNumber(sale.sale_number)}_${templateLabel}`;
+    // A janela popup já abre com auto-print; ao escolher "Salvar como PDF"
+    // o navegador usa o título como nome do arquivo
+    const isA4 = template === 'A4';
+    const ref = isA4 ? receiptA4Ref : receiptThermalRef;
+    const saleNumber = formatSaleNumber(sale.sale_number);
+    const templateLabel = isA4 ? 'A4' : 'Cupom_80mm';
 
-    handlePrint(template);
+    if (!ref.current) return;
 
-    // Restaurar título da página após diálogo
-    setTimeout(() => {
-      document.title = originalTitle;
-    }, 1000);
+    const receiptHtml = ref.current.innerHTML;
+
+    const pageStyles = isA4
+      ? `@page { size: A4 portrait; margin: 8mm; } body { margin: 0; padding: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; }`
+      : `@page { size: 80mm auto; margin: 2mm; } body { margin: 0; padding: 0; background: #fff; width: 80mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }`;
+
+    const fullHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Comprovante_Venda_${saleNumber}_${templateLabel}</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    ${pageStyles}
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    .min-w-\\[500px\\] { min-width: 0 !important; }
+    .overflow-x-auto { overflow: visible !important; }
+    @media screen {
+      body { display: flex; justify-content: center; padding: 20px; }
+      .receipt-wrapper { max-width: ${isA4 ? '800px' : '80mm'}; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="receipt-wrapper">
+    ${receiptHtml}
+  </div>
+  <script>
+    window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 600); });
+  <\/script>
+</body>
+</html>`;
+
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (!win) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Comprovante_Venda_${saleNumber}_${templateLabel}.html`;
+      link.click();
+    }
   };
 
   return (
@@ -70,7 +186,7 @@ export default function SaleReceiptModal({
     >
       <div className="bg-slate-100 rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-300 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-in fade-in zoom-in-95 cursor-default">
         {/* Cabeçalho do Modal */}
-        <div className="p-4 sm:px-6 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0 no-print">
+        <div className="p-4 sm:px-6 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
           <div>
             <div className="flex items-center space-x-2">
               <span className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
@@ -136,7 +252,7 @@ export default function SaleReceiptModal({
 
         {/* Banner de Sucesso pós-venda */}
         {isInitialSuccess && (
-          <div className="px-6 py-3 bg-emerald-600 text-white flex items-center justify-between shrink-0 no-print">
+          <div className="px-6 py-3 bg-emerald-600 text-white flex items-center justify-between shrink-0">
             <div className="flex items-center space-x-2.5">
               <CheckCircle2 className="w-5 h-5 shrink-0" />
               <div>
@@ -155,11 +271,16 @@ export default function SaleReceiptModal({
           </div>
         )}
 
-        {/* Área de Visualização com Scroll (Simulando Papel Real) */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 flex justify-center printable-receipt-container">
-          <div className="w-full flex justify-center py-2 printable-receipt-inner">
-            {activeTemplate === 'A4' ? (
-              <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-slate-300 transition-all receipt-paper-box">
+        {/* Área de Visualização com Scroll */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 flex justify-center">
+          <div className="w-full flex justify-center py-2">
+            {/* A4 — sempre renderizado (para captura via ref) */}
+            <div
+              className={`w-full max-w-2xl bg-white rounded-xl shadow-xl border border-slate-300 transition-all ${
+                activeTemplate === 'A4' ? 'block' : 'hidden'
+              }`}
+            >
+              <div ref={receiptA4Ref}>
                 <SaleReceipt
                   sale={sale}
                   company={company}
@@ -167,8 +288,15 @@ export default function SaleReceiptModal({
                   template="A4"
                 />
               </div>
-            ) : (
-              <div className="bg-white rounded-xl shadow-xl border border-slate-300 p-2 transition-all receipt-paper-box">
+            </div>
+
+            {/* Cupom — sempre renderizado (para captura via ref) */}
+            <div
+              className={`bg-white rounded-xl shadow-xl border border-slate-300 p-2 transition-all ${
+                activeTemplate === 'THERMAL_80' ? 'block' : 'hidden'
+              }`}
+            >
+              <div ref={receiptThermalRef}>
                 <SaleReceipt
                   sale={sale}
                   company={company}
@@ -176,17 +304,17 @@ export default function SaleReceiptModal({
                   template="THERMAL_80"
                 />
               </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Barra de Ações Inferior (Botões de Imprimir, Exportar PDF, etc) */}
-        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0 no-print">
+        {/* Barra de Ações Inferior */}
+        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* Imprimir Modelo Ativo */}
             <button
               type="button"
-              onClick={() => handlePrint(activeTemplate)}
+              onClick={() => openPrintWindow(activeTemplate)}
               className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
@@ -203,7 +331,7 @@ export default function SaleReceiptModal({
               <span>Exportar PDF {activeTemplate === 'A4' ? 'A4' : 'Cupom'}</span>
             </button>
 
-            {/* Ações Rápidas para o outro formato */}
+            {/* Alternar formato */}
             <button
               type="button"
               onClick={() => {
