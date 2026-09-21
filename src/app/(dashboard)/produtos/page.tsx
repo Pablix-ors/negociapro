@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { formatCurrency } from '@/lib/formatters';
 import { Product } from '@/types/database';
 import {
@@ -58,6 +59,8 @@ export default function ProdutosPage() {
     bulkDeleteProducts,
     bulkImportProducts,
   } = useData();
+  const { user } = useAuth();
+  const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
 
   // Estados de busca e filtros básicos
   const [filterQuery, setFilterQuery] = useState('');
@@ -1157,18 +1160,20 @@ export default function ProdutosPage() {
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </Link>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(`Tem certeza que deseja excluir "${prod.name}"?`)) {
-                                  deleteProduct(prod.id);
-                                }
-                              }}
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all border border-slate-200 hover:border-rose-200 shadow-2xs"
-                              title="Excluir Produto"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Tem certeza que deseja excluir "${prod.name}"?`)) {
+                                    deleteProduct(prod.id);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all border border-slate-200 hover:border-rose-200 shadow-2xs cursor-pointer"
+                                title="Excluir Produto (Admin/Gerente)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1337,15 +1342,17 @@ export default function ProdutosPage() {
               <span>Alterar Comissão</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleBulkDelete}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-xl text-xs font-bold transition-all border border-rose-800/50"
-              title="Excluir selecionados"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Excluir</span>
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-xl text-xs font-bold transition-all border border-rose-800/50 cursor-pointer"
+                title="Excluir selecionados (Admin/Gerente)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Excluir</span>
+              </button>
+            )}
 
             <button
               type="button"

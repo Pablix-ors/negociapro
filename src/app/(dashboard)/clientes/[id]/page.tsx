@@ -35,7 +35,7 @@ export default function ClienteDetalhesPage() {
   const router = useRouter();
   const { customers, sales, receivables, paymentReceipts, updateCustomer, deleteCustomer } = useData();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
 
   const customerId = params?.id as string;
   const customer = customers.find((c) => c.id === customerId);
@@ -248,7 +248,7 @@ export default function ClienteDetalhesPage() {
             <span>Editar</span>
           </button>
 
-          {isAdmin && (
+          {canDelete && (
             <button
               type="button"
               onClick={() => setIsDeleteModalOpen(true)}

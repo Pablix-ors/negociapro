@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { CommissionType, Product } from '@/types/database';
 import { STANDARD_UNITS } from '@/lib/productConstants';
 import {
@@ -26,6 +27,8 @@ export default function EditarProdutoPage() {
   const params = useParams();
   const productId = params?.id as string;
   const { products, updateProduct, deleteProduct } = useData();
+  const { user } = useAuth();
+  const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
 
   const product = products.find((p) => p.id === productId);
 
@@ -458,19 +461,21 @@ export default function EditarProdutoPage() {
 
         {/* Ações */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm(`Tem certeza que deseja excluir o produto "${product.name}"? Esta ação removerá o produto de todos os dispositivos.`)) {
-                deleteProduct(product.id);
-                router.push('/produtos');
-              }
-            }}
-            className="w-full sm:w-auto inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4 text-rose-600" />
-            <span>Excluir Produto</span>
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Tem certeza que deseja excluir o produto "${product.name}"? Esta ação removerá o produto de todos os dispositivos.`)) {
+                  deleteProduct(product.id);
+                  router.push('/produtos');
+                }
+              }}
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600" />
+              <span>Excluir Produto</span>
+            </button>
+          )}
 
           <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
             <Link

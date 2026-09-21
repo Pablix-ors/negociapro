@@ -25,7 +25,7 @@ import {
 export default function ClientesPage() {
   const { customers, deleteCustomer } = useData();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
   const [filterQuery, setFilterQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'PF' | 'PJ'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -251,7 +251,7 @@ export default function ClientesPage() {
                             <ChevronRight className="w-3.5 h-3.5" />
                           </Link>
 
-                          {isAdmin && (
+                          {canDelete && (
                             <button
                               type="button"
                               onClick={() => setClientToDelete(cust)}
@@ -294,7 +294,7 @@ export default function ClientesPage() {
                       >
                         {cust.active ? 'Ativo' : 'Inativo'}
                       </span>
-                      {isAdmin && (
+                      {canDelete && (
                         <button
                           type="button"
                           onClick={() => setClientToDelete(cust)}
