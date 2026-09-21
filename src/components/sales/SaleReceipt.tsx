@@ -177,57 +177,59 @@ export function SaleReceiptA4({
         <h2 className="text-[11px] font-black uppercase tracking-wider text-slate-800 mb-2">
           Itens da Venda
         </h2>
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-y-2 border-slate-900 bg-slate-100 text-[11px] font-black uppercase text-slate-700">
-              {settings.show_product_code && <th className="py-2 px-2 w-24">Código</th>}
-              <th className="py-2 px-2">Produto / Serviço</th>
-              <th className="py-2 px-2 text-center w-16">UN</th>
-              <th className="py-2 px-2 text-right w-16">Qtd.</th>
-              <th className="py-2 px-2 text-right w-24">Valor Unit.</th>
-              <th className="py-2 px-2 text-right w-24">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {sale.items && sale.items.length > 0 ? (
-              sale.items.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50">
-                  {settings.show_product_code && (
-                    <td className="py-2 px-2 font-mono text-[11px] text-slate-500">
-                      {item.product?.sku || item.product?.barcode || '-'}
-                    </td>
-                  )}
-                  <td className="py-2 px-2 font-medium text-slate-900">
-                    <span className="font-bold block">{item.product?.name || 'Produto'}</span>
-                    {item.discount > 0 && (
-                      <span className="text-[10px] text-red-600 block">
-                        Desconto aplicado: -{formatCurrency(item.discount)}
-                      </span>
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left border-collapse min-w-[500px] sm:min-w-0">
+            <thead>
+              <tr className="border-y-2 border-slate-900 bg-slate-100 text-[11px] font-black uppercase text-slate-700">
+                {settings.show_product_code && <th className="py-2 px-2 w-24">Código</th>}
+                <th className="py-2 px-2">Produto / Serviço</th>
+                <th className="py-2 px-2 text-center w-16">UN</th>
+                <th className="py-2 px-2 text-right w-16">Qtd.</th>
+                <th className="py-2 px-2 text-right w-24">Valor Unit.</th>
+                <th className="py-2 px-2 text-right w-24">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {sale.items && sale.items.length > 0 ? (
+                sale.items.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    {settings.show_product_code && (
+                      <td className="py-2 px-2 font-mono text-[11px] text-slate-500">
+                        {item.product?.sku || item.product?.barcode || '-'}
+                      </td>
                     )}
-                  </td>
-                  <td className="py-2 px-2 text-center text-slate-600 font-medium">
-                    {item.product?.unit || 'UN'}
-                  </td>
-                  <td className="py-2 px-2 text-right font-bold text-slate-800">
-                    {item.quantity}
-                  </td>
-                  <td className="py-2 px-2 text-right text-slate-700">
-                    {formatCurrency(item.unit_price)}
-                  </td>
-                  <td className="py-2 px-2 text-right font-black text-slate-900">
-                    {formatCurrency(item.total)}
+                    <td className="py-2 px-2 font-medium text-slate-900">
+                      <span className="font-bold block">{item.product?.name || 'Produto'}</span>
+                      {item.discount > 0 && (
+                        <span className="text-[10px] text-red-600 block">
+                          Desconto aplicado: -{formatCurrency(item.discount)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-center text-slate-600 font-medium">
+                      {item.product?.unit || 'UN'}
+                    </td>
+                    <td className="py-2 px-2 text-right font-bold text-slate-800">
+                      {item.quantity}
+                    </td>
+                    <td className="py-2 px-2 text-right text-slate-700">
+                      {formatCurrency(item.unit_price)}
+                    </td>
+                    <td className="py-2 px-2 text-right font-black text-slate-900">
+                      {formatCurrency(item.total)}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-slate-400">
+                    Nenhum item discriminado.
                   </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={6} className="py-4 text-center text-slate-400">
-                  Nenhum item discriminado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Resumo Financeiro */}

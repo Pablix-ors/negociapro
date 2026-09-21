@@ -70,7 +70,7 @@ export default function SaleReceiptModal({
     >
       <div className="bg-slate-100 rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-300 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-in fade-in zoom-in-95 cursor-default">
         {/* Cabeçalho do Modal */}
-        <div className="p-4 sm:px-6 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
+        <div className="p-4 sm:px-6 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0 no-print">
           <div>
             <div className="flex items-center space-x-2">
               <span className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
@@ -136,7 +136,7 @@ export default function SaleReceiptModal({
 
         {/* Banner de Sucesso pós-venda */}
         {isInitialSuccess && (
-          <div className="px-6 py-3 bg-emerald-600 text-white flex items-center justify-between shrink-0">
+          <div className="px-6 py-3 bg-emerald-600 text-white flex items-center justify-between shrink-0 no-print">
             <div className="flex items-center space-x-2.5">
               <CheckCircle2 className="w-5 h-5 shrink-0" />
               <div>
@@ -156,10 +156,10 @@ export default function SaleReceiptModal({
         )}
 
         {/* Área de Visualização com Scroll (Simulando Papel Real) */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 flex justify-center">
-          <div className="w-full flex justify-center py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 flex justify-center printable-receipt-container">
+          <div className="w-full flex justify-center py-2 printable-receipt-inner">
             {activeTemplate === 'A4' ? (
-              <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-slate-300 transition-all">
+              <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-slate-300 transition-all receipt-paper-box">
                 <SaleReceipt
                   sale={sale}
                   company={company}
@@ -168,7 +168,7 @@ export default function SaleReceiptModal({
                 />
               </div>
             ) : (
-              <div className="bg-white rounded-xl shadow-xl border border-slate-300 p-2 transition-all">
+              <div className="bg-white rounded-xl shadow-xl border border-slate-300 p-2 transition-all receipt-paper-box">
                 <SaleReceipt
                   sale={sale}
                   company={company}
@@ -181,7 +181,7 @@ export default function SaleReceiptModal({
         </div>
 
         {/* Barra de Ações Inferior (Botões de Imprimir, Exportar PDF, etc) */}
-        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0 no-print">
           <div className="flex flex-wrap items-center gap-2">
             {/* Imprimir Modelo Ativo */}
             <button

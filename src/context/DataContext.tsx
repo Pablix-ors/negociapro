@@ -349,8 +349,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data && data.success && Array.isArray(data.sales)) {
-            setSales(data.sales);
-            safeSetItem(`negociapro_sales${key}`, JSON.stringify(data.sales));
+            setSales((prev) => {
+              const merged = data.sales.map((serverSale: Sale) => {
+                const existing = prev.find((p) => p.id === serverSale.id);
+                if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
+                  return { ...serverSale, items: existing.items };
+                }
+                return serverSale;
+              });
+              safeSetItem(`negociapro_sales${key}`, JSON.stringify(merged));
+              return merged;
+            });
           }
         })
         .catch(() => {});
@@ -681,14 +690,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((data) => {
           if (isMounted && data?.success && Array.isArray(data.sales)) {
             setSales((prev) => {
-              if (
-                prev.length !== data.sales.length ||
-                data.sales.some((ss: any, idx: number) => ss.id !== prev[idx]?.id)
-              ) {
-                safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(data.sales));
-                return data.sales;
-              }
-              return prev;
+              // Fazer merge inteligente preservando os itens da venda se prev tiver itens e data.sales não
+              const mergedSales = data.sales.map((serverSale: Sale) => {
+                const existing = prev.find((p) => p.id === serverSale.id);
+                if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
+                  return { ...serverSale, items: existing.items };
+                }
+                return serverSale;
+              });
+
+              safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(mergedSales));
+              return mergedSales;
             });
           }
         })
@@ -1729,7 +1741,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data && data.success && data.sale) {
-            setSales((prev) => prev.map((s) => (s.id === saleId ? data.sale : s)));
+            // Mesclar garantindo que os itens enriquecidos (com produto, nome e cálculos) não se percam caso a resposta do servidor venha com itens incompletos
+            const serverSale = data.sale;
+            const finalMergedSale: Sale = {
+              ...createdSale,
+              ...serverSale,
+              items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (createdSale.items || enrichedItems),
+              customer: serverSale.customer || createdSale.customer,
+              professional: serverSale.professional || createdSale.professional,
+            };
+            setSales((prev) => prev.map((s) => (s.id === saleId ? finalMergedSale : s)));
           }
         })
         .catch((err) => console.warn('Falha ao persistir venda no Supabase:', err));

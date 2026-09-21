@@ -111,16 +111,17 @@ body {
    ESTILOS DE IMPRESSÃO - COMPROVANTE NÃO FISCAL (A4 & CUPOM TÉRMICO 80MM)
    ========================================================================== */
 @media print {
-  /* Ocultar elementos normais da interface: navbar, sidebar, botões, tooltips, modais padrão */
+  /* Ocultar tudo o que não pertence ao comprovante na folha de impressão */
   body, html {
     background: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
-  /* Qualquer elemento marcado com no-print não será impresso */
   .no-print,
   aside,
   header,
@@ -131,7 +132,28 @@ body {
     display: none !important;
   }
 
-  /* Garante que o container de impressão ocupe tudo e seja visível */
+  /* Reset de container modal para impressão */
+  .fixed.inset-0 {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .bg-slate-100.rounded-3xl,
+  .receipt-paper-box {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
   .printable-receipt-container {
     display: block !important;
     position: static !important;
@@ -141,17 +163,43 @@ body {
     background: #ffffff !important;
     box-shadow: none !important;
     border: none !important;
+    overflow: visible !important;
   }
 
-  /* Modo Cupom Térmico: Página contínua sem quebra artificial e margens zeradas */
+  .printable-receipt-inner {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  /* Impressão A4 */
+  body.print-mode-a4 .printable-a4-sheet {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 10mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Modo Cupom Térmico 80mm */
   body.print-mode-cupom {
     width: 80mm !important;
     max-width: 80mm !important;
     margin: 0 !important;
     padding: 0 !important;
   }
+
+  body.print-mode-cupom .printable-thermal-sheet {
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 4mm 2mm !important;
+    box-sizing: border-box !important;
+  }
 }
 
 @page {
-  margin: 8mm;
+  size: auto;
+  margin: 5mm;
 }
