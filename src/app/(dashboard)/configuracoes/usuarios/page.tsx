@@ -72,6 +72,32 @@ export default function UsuariosConfigPage() {
         } catch {}
       }
 
+      // 3. Mesclar com profissionais cadastrados no contexto que tenham e-mail
+      if (professionals && professionals.length > 0) {
+        professionals.forEach(p => {
+          if (p.email && p.email.trim()) {
+            const cleanEmail = p.email.trim().toLowerCase();
+            const exists = cached.some(u => u.email.toLowerCase() === cleanEmail);
+            if (!exists) {
+              const roleTitleLower = (p.role_title || '').toLowerCase();
+              let inferredRole: UserRole = 'VENDEDOR';
+              if (roleTitleLower.includes('admin') || roleTitleLower.includes('administrador')) inferredRole = 'ADMIN';
+              else if (roleTitleLower.includes('gerente')) inferredRole = 'GERENTE';
+
+              cached.push({
+                id: p.id || `prof-${Date.now()}`,
+                company_id: p.company_id || targetCompanyId,
+                name: p.name,
+                email: cleanEmail,
+                role: inferredRole,
+                phone: p.phone,
+                active: p.active ?? true,
+              });
+            }
+          }
+        });
+      }
+
       if (!isDemo && cached.length > 0) {
         const sanitized = cached.filter(u => u.company_id !== 'a0000000-0000-0000-0000-000000000001' && u.name !== 'Carlos Vendedor Master');
         if (isMounted) setUsersList(sanitized);
@@ -100,6 +126,31 @@ export default function UsuariosConfigPage() {
               }
             });
 
+            // Mesclar também quaisquer profissionais com e-mail
+            if (professionals && professionals.length > 0) {
+              professionals.forEach(p => {
+                if (p.email && p.email.trim()) {
+                  const cleanEmail = p.email.trim().toLowerCase();
+                  if (!serverUsers.some(su => su.email.toLowerCase() === cleanEmail)) {
+                    const roleTitleLower = (p.role_title || '').toLowerCase();
+                    let inferredRole: UserRole = 'VENDEDOR';
+                    if (roleTitleLower.includes('admin') || roleTitleLower.includes('administrador')) inferredRole = 'ADMIN';
+                    else if (roleTitleLower.includes('gerente')) inferredRole = 'GERENTE';
+
+                    serverUsers.push({
+                      id: p.id,
+                      company_id: p.company_id || targetCompanyId,
+                      name: p.name,
+                      email: cleanEmail,
+                      role: inferredRole,
+                      phone: p.phone,
+                      active: p.active ?? true,
+                    });
+                  }
+                }
+              });
+            }
+
             if (isMounted) {
               setUsersList(serverUsers);
               localStorage.setItem(tenantStorageKey, JSON.stringify(serverUsers));
@@ -119,7 +170,7 @@ export default function UsuariosConfigPage() {
     return () => {
       isMounted = false;
     };
-  }, [tenantStorageKey, targetCompanyId, isDemo, user]);
+  }, [tenantStorageKey, targetCompanyId, isDemo, user, professionals]);
 
   const saveUsersState = (newList: Profile[]) => {
     setUsersList(newList);

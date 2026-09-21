@@ -46,8 +46,16 @@ export async function GET(request: Request) {
       console.warn('Aviso ao listar auth users:', authErr);
     }
 
-    // 3. Montar lista consolidada
+    // 3. Buscar também na tabela professionals para garantir que todo profissional cadastrado com e-mail apareça na equipe
+    const { data: professionals } = await supabase
+      .from('professionals')
+      .select('*')
+      .eq('company_id', companyId);
+
+    // 4. Montar lista consolidada
+    const existingEmails = new Set<string>();
     const combinedUsers = (profiles || []).map((p) => {
+      existingEmails.add(p.email.toLowerCase());
       const authUser = authUsersMap[p.email.toLowerCase()];
       return {
         id: p.id,
@@ -60,6 +68,34 @@ export async function GET(request: Request) {
         email_confirmed_at: authUser?.email_confirmed_at || null,
       };
     });
+
+    // Adicionar profissionais com e-mail que ainda não estão em profiles
+    if (professionals && professionals.length > 0) {
+      for (const prof of professionals) {
+        if (!prof.email) continue;
+        const profEmail = prof.email.trim().toLowerCase();
+        if (!existingEmails.has(profEmail)) {
+          existingEmails.add(profEmail);
+          const authUser = authUsersMap[profEmail];
+          
+          let inferredRole: 'ADMIN' | 'GERENTE' | 'VENDEDOR' = 'VENDEDOR';
+          const rLower = (prof.role_title || '').toLowerCase();
+          if (rLower.includes('admin')) inferredRole = 'ADMIN';
+          else if (rLower.includes('gerente')) inferredRole = 'GERENTE';
+
+          combinedUsers.push({
+            id: prof.id,
+            company_id: prof.company_id,
+            name: prof.name,
+            email: profEmail,
+            role: inferredRole,
+            phone: prof.phone || undefined,
+            active: prof.active ?? true,
+            email_confirmed_at: authUser?.email_confirmed_at || null,
+          });
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

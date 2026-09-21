@@ -57,6 +57,22 @@ export async function PATCH(request: Request) {
           });
         }
       }
+
+      // 3. Atualizar também na tabela professionals para manter 100% sincronizado
+      if (email) {
+        const roleTitleMap: Record<string, string> = {
+          ADMIN: 'Administrador',
+          GERENTE: 'Gerente Comercial',
+          VENDEDOR: 'Vendedor / Consultor',
+        };
+        await supabase
+          .from('professionals')
+          .update({
+            role_title: roleTitleMap[newRole] || 'Vendedor / Consultor',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('email', email.trim().toLowerCase());
+      }
     }
 
     return NextResponse.json({

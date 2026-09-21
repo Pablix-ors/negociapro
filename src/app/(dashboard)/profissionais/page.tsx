@@ -130,7 +130,7 @@ export default function ProfissionaisPage() {
     return matchesQuery && matchesStatus;
   });
 
-  const [enableLoginAccess, setEnableLoginAccess] = useState(false);
+  const [enableLoginAccess, setEnableLoginAccess] = useState(true);
   const [loginRole, setLoginRole] = useState<UserRole>('VENDEDOR');
   const [tempPassword, setTempPassword] = useState('123456');
   const [showTempPass, setShowTempPass] = useState(false);
@@ -145,7 +145,7 @@ export default function ProfissionaisPage() {
     setRoleTitle('Vendedor / Consultor');
     setNotes('');
     setAvatarUrl('');
-    setEnableLoginAccess(false);
+    setEnableLoginAccess(true);
     setLoginRole('VENDEDOR');
     setTempPassword('123456');
     setShowTempPass(false);
@@ -159,11 +159,28 @@ export default function ProfissionaisPage() {
     setDocument(prof.document || '');
     setPhone(prof.phone || '');
     setEmail(prof.email || '');
-    setRoleTitle(prof.role_title || 'Profissional');
+    setRoleTitle(prof.role_title || 'Vendedor / Consultor');
     setNotes(prof.notes || '');
     setAvatarUrl(prof.avatar_url || '');
-    setEnableLoginAccess(false);
-    setLoginRole('VENDEDOR');
+    setEnableLoginAccess(true);
+    
+    // Identificar cargo correspondente pelo role_title ou pelo cache de usuários
+    let inferred: UserRole = 'VENDEDOR';
+    const rLower = (prof.role_title || '').toLowerCase();
+    if (rLower.includes('admin') || rLower.includes('administrador')) inferred = 'ADMIN';
+    else if (rLower.includes('gerente')) inferred = 'GERENTE';
+
+    try {
+      const tenantUsersKey = currentCompany?.id ? `negociapro_users_list_tenant_${currentCompany.id}` : 'negociapro_users_list';
+      const rawUsers = localStorage.getItem(tenantUsersKey) || localStorage.getItem('negociapro_users_list');
+      if (rawUsers && prof.email) {
+        const uList: Profile[] = JSON.parse(rawUsers);
+        const match = uList.find(u => u.email.toLowerCase() === prof.email?.toLowerCase());
+        if (match?.role) inferred = match.role;
+      }
+    } catch {}
+
+    setLoginRole(inferred);
     setTempPassword('123456');
     setShowTempPass(false);
     setError(null);
@@ -179,20 +196,21 @@ export default function ProfissionaisPage() {
       return;
     }
 
-    if (enableLoginAccess) {
-      if (!email || !email.trim()) {
-        setError('Para criar o login de acesso do profissional, é obrigatório preencher o campo E-mail.');
-        return;
-      }
-      if (!email.includes('@') || !email.includes('.')) {
-        setError('Por favor, informe um endereço de e-mail válido para o login.');
-        return;
-      }
+    if (!email || !email.trim()) {
+      setError('O e-mail é obrigatório para cadastrar o profissional e criar/manter seu acesso ao sistema.');
+      return;
+    }
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Por favor, informe um endereço de e-mail válido.');
+      return;
     }
 
     setIsSubmitting(true);
 
     try {
+      const targetCompanyId = currentCompany?.id || currentUser?.company_id || 'demo-company';
+      const targetCompanyName = currentCompany?.trade_name || currentCompany?.name || currentUser?.name || 'NegociaPro';
+
       if (editingProf) {
         updateProfessional(editingProf.id, {
           name,
@@ -203,6 +221,46 @@ export default function ProfissionaisPage() {
           notes,
           avatar_url: avatarUrl || null,
         });
+
+        // Atualizar cargo na lista local de usuários
+        if (email.trim()) {
+          try {
+            const tenantUsersKey = targetCompanyId ? `negociapro_users_list_tenant_${targetCompanyId}` : 'negociapro_users_list';
+            const rawUsers = localStorage.getItem(tenantUsersKey) || localStorage.getItem('negociapro_users_list');
+            const currentUsersList: Profile[] = rawUsers ? JSON.parse(rawUsers) : [];
+            const existingIndex = currentUsersList.findIndex(u => u.email.toLowerCase() === email.trim().toLowerCase());
+            if (existingIndex >= 0) {
+              currentUsersList[existingIndex].name = name;
+              currentUsersList[existingIndex].role = loginRole;
+              currentUsersList[existingIndex].phone = phone || undefined;
+            } else {
+              currentUsersList.push({
+                id: `usr-${Date.now()}`,
+                company_id: targetCompanyId,
+                name: name,
+                email: email.trim().toLowerCase(),
+                role: loginRole,
+                phone: phone || undefined,
+                active: true,
+              });
+            }
+            localStorage.setItem(tenantUsersKey, JSON.stringify(currentUsersList));
+            localStorage.setItem('negociapro_users_list', JSON.stringify(currentUsersList));
+          } catch {}
+
+          // Sincronizar cargo na API
+          try {
+            await fetch('/api/users/role', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: email.trim(),
+                newRole: loginRole,
+                requesterRole: currentUser?.role || 'ADMIN',
+              }),
+            });
+          } catch {}
+        }
       } else {
         addProfessional({
           name,
@@ -215,71 +273,64 @@ export default function ProfissionaisPage() {
           active: true,
         });
 
-        // Se marcou para criar acesso de login ao sistema
-        if (enableLoginAccess && email.trim()) {
-          const targetCompanyId = currentCompany?.id || currentUser?.company_id || 'demo-company';
-          const targetCompanyName = currentCompany?.trade_name || currentCompany?.name || currentUser?.name || 'NegociaPro';
+        // Salvar em lista local de usuários para consistência offline imediata
+        try {
+          const tenantUsersKey = targetCompanyId ? `negociapro_users_list_tenant_${targetCompanyId}` : 'negociapro_users_list';
+          const rawUsers = localStorage.getItem(tenantUsersKey) || localStorage.getItem('negociapro_users_list');
+          const currentUsersList: Profile[] = rawUsers ? JSON.parse(rawUsers) : [];
+          const newUserProfile: Profile = {
+            id: `usr-${Date.now()}`,
+            company_id: targetCompanyId,
+            name: name,
+            email: email.trim().toLowerCase(),
+            role: loginRole,
+            phone: phone || undefined,
+            active: true,
+          };
+          const filtered = currentUsersList.filter(u => u.email.toLowerCase() !== email.trim().toLowerCase());
+          filtered.push(newUserProfile);
+          localStorage.setItem(tenantUsersKey, JSON.stringify(filtered));
+          localStorage.setItem('negociapro_users_list', JSON.stringify(filtered));
+        } catch {}
 
-          // Salvar também em lista local para consistência offline imediata
-          try {
-            const tenantUsersKey = targetCompanyId ? `negociapro_users_list_tenant_${targetCompanyId}` : 'negociapro_users_list';
-            const rawUsers = localStorage.getItem(tenantUsersKey) || localStorage.getItem('negociapro_users_list');
-            const currentUsersList: Profile[] = rawUsers ? JSON.parse(rawUsers) : [];
-            const newUserProfile: Profile = {
-              id: `usr-${Date.now()}`,
-              company_id: targetCompanyId,
-              name: name,
-              email: email.trim().toLowerCase(),
-              role: loginRole,
-              phone: phone || undefined,
-              active: true,
-            };
-            const filtered = currentUsersList.filter(u => u.email.toLowerCase() !== email.trim().toLowerCase());
-            filtered.push(newUserProfile);
-            localStorage.setItem(tenantUsersKey, JSON.stringify(filtered));
-            localStorage.setItem('negociapro_users_list', JSON.stringify(filtered));
-          } catch {}
-
-          // Enviar convite oficial pelo Supabase Auth via Brevo SMTP
-          try {
-            const res = await fetch('/api/auth/convite', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name,
-                email: email.trim(),
-                phone: phone || '',
-                role: loginRole,
-                companyId: targetCompanyId,
-                companyName: targetCompanyName,
-              }),
-            });
-
-            const data = await res.json();
-            if (!res.ok && !data.success) {
-              console.warn('Aviso ao enviar convite:', data.message);
-            }
-
-            // Abrir modal de confirmação do convite enviado com link de ativação
-            setCredentialsModal({
+        // Enviar convite oficial pelo Supabase Auth via Brevo SMTP
+        try {
+          const res = await fetch('/api/auth/convite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
               name,
               email: email.trim(),
+              phone: phone || '',
               role: loginRole,
-              tempPass: 'Link de ativação (o profissional definirá a própria senha)',
-              inviteUrl: data.inviteUrl || '',
-              emailSent: data.emailSent ?? true,
-              emailError: data.emailError || null,
-            });
-          } catch (apiErr) {
-            console.error('Erro na chamada da rota /api/auth/convite:', apiErr);
-            setCredentialsModal({
-              name,
-              email: email.trim(),
-              role: loginRole,
-              tempPass: 'Convite registrado',
-              emailSent: false,
-            });
+              companyId: targetCompanyId,
+              companyName: targetCompanyName,
+            }),
+          });
+
+          const data = await res.json();
+          if (!res.ok && !data.success) {
+            console.warn('Aviso ao enviar convite:', data.message);
           }
+
+          setCredentialsModal({
+            name,
+            email: email.trim(),
+            role: loginRole,
+            tempPass: 'Link de ativação (o profissional definirá a própria senha)',
+            inviteUrl: data.inviteUrl || '',
+            emailSent: data.emailSent ?? true,
+            emailError: data.emailError || null,
+          });
+        } catch (apiErr) {
+          console.error('Erro na chamada da rota /api/auth/convite:', apiErr);
+          setCredentialsModal({
+            name,
+            email: email.trim(),
+            role: loginRole,
+            tempPass: 'Convite registrado',
+            emailSent: false,
+          });
         }
       }
 
@@ -872,55 +923,57 @@ export default function ProfissionaisPage() {
                 />
               </div>
 
-              {/* Opção Rápida: Liberar Acesso de Login ao Sistema */}
-              {!editingProf && (
-                <div className="p-3.5 bg-blue-50/60 border border-blue-200/80 rounded-2xl space-y-3">
-                  <label className="flex items-start space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={enableLoginAccess}
-                      onChange={(e) => setEnableLoginAccess(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <Key className="w-3.5 h-3.5 text-blue-600" />
-                        Criar login e senha de acesso ao sistema
+              {/* Opção: Acesso de Login e Nível de Permissão ao Sistema */}
+              <div className="p-3.5 bg-blue-50/60 border border-blue-200/80 rounded-2xl space-y-3">
+                <label className="flex items-start space-x-3 cursor-default">
+                  <input
+                    type="checkbox"
+                    checked={true}
+                    disabled
+                    readOnly
+                    className="mt-0.5 h-4 w-4 rounded border-blue-400 text-blue-600 bg-blue-100 focus:ring-0 cursor-not-allowed"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-blue-600" />
+                      {editingProf ? 'Acesso ao Sistema Ativo' : 'Criar login e senha de acesso ao sistema'}
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-700 font-extrabold">
+                        Obrigatório
                       </span>
-                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                        Permite que este profissional entre no sistema com seu e-mail para registrar vendas e consultar o histórico de clientes.
-                      </p>
-                    </div>
-                  </label>
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Permite que este profissional entre no sistema com seu e-mail para registrar vendas e consultar o histórico de clientes.
+                    </p>
+                  </div>
+                </label>
 
-                  {enableLoginAccess && (
-                    <div className="pt-2 border-t border-blue-100/80 space-y-3">
-                      <div className="p-2.5 bg-blue-100/70 border border-blue-200 rounded-xl flex items-center space-x-2 text-xs text-blue-900">
-                        <Building2 className="w-4 h-4 text-blue-700 shrink-0" />
-                        <span>Estabelecimento vinculado: <strong>{currentCompany?.trade_name || currentCompany?.name || 'NegociaPro (Demonstração)'}</strong></span>
-                      </div>
+                <div className="pt-2 border-t border-blue-100/80 space-y-3">
+                  <div className="p-2.5 bg-blue-100/70 border border-blue-200 rounded-xl flex items-center space-x-2 text-xs text-blue-900">
+                    <Building2 className="w-4 h-4 text-blue-700 shrink-0" />
+                    <span>Estabelecimento vinculado: <strong>{currentCompany?.trade_name || currentCompany?.name || 'NegociaPro (Demonstração)'}</strong></span>
+                  </div>
 
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Nível de Permissão
-                        </label>
-                        <select
-                          value={loginRole}
-                          onChange={(e) => setLoginRole(e.target.value as UserRole)}
-                          className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="VENDEDOR">Vendedor (Padrão)</option>
-                          <option value="GERENTE">Gerente Comercial</option>
-                          <option value="ADMIN">Administrador</option>
-                        </select>
-                      </div>
-                      <p className="text-[11px] text-blue-700 bg-blue-100/60 p-2.5 rounded-xl border border-blue-200">
-                        Um convite oficial do <strong>Supabase Auth</strong> será enviado para o e-mail informado. O próprio colaborador definirá sua senha pessoal com total segurança.
-                      </p>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Nível de Permissão de Acesso *
+                    </label>
+                    <select
+                      value={loginRole}
+                      onChange={(e) => setLoginRole(e.target.value as UserRole)}
+                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-xs"
+                    >
+                      <option value="VENDEDOR">Vendedor (Padrão)</option>
+                      <option value="GERENTE">Gerente Comercial</option>
+                      <option value="ADMIN">Administrador</option>
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-blue-700 bg-blue-100/60 p-2.5 rounded-xl border border-blue-200">
+                    {editingProf
+                      ? 'Ao salvar, o nível de permissão (Vendedor, Gerente ou Administrador) será atualizado tanto no perfil quanto na lista de usuários.'
+                      : 'Um convite oficial do Supabase Auth será enviado para o e-mail informado para que o colaborador defina sua senha.'}
+                  </p>
                 </div>
-              )}
+              </div>
 
               {error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center space-x-2 text-xs text-red-700 font-semibold animate-in fade-in">
