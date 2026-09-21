@@ -129,6 +129,7 @@ interface DataContextType {
     notes?: string;
   }) => Sale;
   cancelSale: (id: string) => void;
+  deleteSale: (idOrSaleNumber: string | number) => void;
   markCommissionAsPaid: (commissionId: string, paidAmount?: number, notes?: string) => void;
 }
 
@@ -1786,6 +1787,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteSale = (idOrSaleNumber: string | number) => {
+    const isNum = typeof idOrSaleNumber === 'number' || (!isNaN(Number(idOrSaleNumber)) && String(idOrSaleNumber).length <= 6);
+    const saleNum = isNum ? Number(idOrSaleNumber) : null;
+
+    // Encontrar venda a ser excluída
+    const targetSale = sales.find(
+      (s) => s.id === String(idOrSaleNumber) || (saleNum !== null && Number(s.sale_number) === saleNum)
+    );
+
+    // 1. Remover do array de vendas
+    const updatedSales = sales.filter((s) => {
+      if (saleNum !== null && Number(s.sale_number) === saleNum) return false;
+      if (s.id === String(idOrSaleNumber)) return false;
+      return true;
+    });
+    saveSalesState(updatedSales);
+
+    // 2. Remover comissão correspondente se existir
+    if (targetSale) {
+      const updatedComms = commissions.filter((c) => c.sale_id !== targetSale.id && Number(c.sale_number) !== Number(targetSale.sale_number));
+      saveCommsState(updatedComms);
+
+      // 3. Remover contas a receber geradas por essa venda
+      const updatedRecs = receivables.filter((r) => r.sale_id !== targetSale.id && Number(r.sale_number) !== Number(targetSale.sale_number));
+      saveReceivablesState(updatedRecs);
+    }
+
+    // 4. Sincronizar exclusão definitiva com o Supabase
+    if (company?.id && !isDemoCompany) {
+      const queryParam = saleNum !== null ? `sale_number=${saleNum}` : `id=${encodeURIComponent(String(idOrSaleNumber))}`;
+      fetch(`/api/sales?company_id=${encodeURIComponent(company.id)}&${queryParam}`, {
+        method: 'DELETE',
+      }).catch((err) => console.warn('Falha ao excluir venda no Supabase:', err));
+    }
+  };
+
   const markCommissionAsPaid = (commissionId: string, paidAmount?: number, notes?: string) => {
     const nowIso = new Date().toISOString();
     let targetProfId: string | null = null;
@@ -1871,6 +1908,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         deleteProfessional,
         createSale,
         cancelSale,
+        deleteSale,
         markCommissionAsPaid,
       }}
     >

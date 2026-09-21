@@ -30,6 +30,7 @@ import {
   ChevronDown,
   RotateCcw,
   Check,
+  Trash2,
 } from 'lucide-react';
 
 interface AdvancedFilters {
@@ -63,7 +64,7 @@ const INITIAL_FILTERS: AdvancedFilters = {
 };
 
 export default function VendasPage() {
-  const { sales, professionals, receivables, cancelSale } = useData();
+  const { sales, professionals, receivables, cancelSale, deleteSale } = useData();
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED'>('ALL');
 
@@ -847,11 +848,25 @@ export default function VendasPage() {
                               type="button"
                               onClick={() => cancelSale(sale.id)}
                               title="Cancelar venda com segurança"
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
                             >
                               <XCircle className="w-4 h-4" />
                             </button>
                           )}
+
+                          {/* Excluir Venda Definitivamente */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Tem certeza que deseja excluir definitivamente a venda #${formatSaleNumber(sale.sale_number)}? Esta ação é irreversível.`)) {
+                                deleteSale(sale.id);
+                              }
+                            }}
+                            title="Excluir venda definitivamente"
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1086,6 +1101,20 @@ export default function VendasPage() {
                   <ShoppingCart className="w-4 h-4" />
                   <span>Repetir Pedido</span>
                 </Link>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Tem certeza que deseja excluir definitivamente a venda #${formatSaleNumber(selectedSale.sale_number)}? Esta ação é irreversível.`)) {
+                      deleteSale(selectedSale.id);
+                      setSelectedSale(null);
+                    }
+                  }}
+                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Excluir Venda</span>
+                </button>
               </div>
 
               <button

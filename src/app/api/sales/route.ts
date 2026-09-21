@@ -163,3 +163,52 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
 }
+
+// DELETE: Excluir venda definitivamente (e seus itens vinculados)
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const saleNumber = searchParams.get('sale_number');
+    const companyId = searchParams.get('company_id');
+
+    if (!companyId || (!id && !saleNumber)) {
+      return NextResponse.json({ success: false, error: 'company_id e (id ou sale_number) são obrigatórios' }, { status: 400 });
+    }
+
+    const supabase = getAdminClient();
+
+    // 1. Identificar ID da venda
+    let targetSaleId = id;
+    if (!targetSaleId && saleNumber) {
+      const { data: found } = await supabase
+        .from('sales')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('sale_number', Number(saleNumber))
+        .single();
+      if (found?.id) {
+        targetSaleId = found.id;
+      }
+    }
+
+    if (targetSaleId) {
+      // 2. Excluir itens vinculados primeiro
+      await supabase.from('sale_items').delete().eq('sale_id', targetSaleId);
+      // 3. Excluir a venda
+      const { error: delErr } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', targetSaleId)
+        .eq('company_id', companyId);
+
+      if (delErr) {
+        return NextResponse.json({ success: false, error: delErr.message }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
+  }
+}
