@@ -33,6 +33,31 @@ export default function EmpresaConfigPage() {
   });
 
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Sincronizar dados do formulário quando os dados da empresa carregarem
+  useEffect(() => {
+    if (company) {
+      setFormData({
+        name: company.name || '',
+        trade_name: company.trade_name || '',
+        cnpj: company.cnpj || '',
+        state_registration: company.state_registration || '',
+        municipal_registration: company.municipal_registration || '',
+        email: company.email || '',
+        phone: company.phone || '',
+        whatsapp: company.whatsapp || '',
+        website: company.website || '',
+        zip_code: company.zip_code || '',
+        street: company.street || '',
+        number: company.number || '',
+        complement: company.complement || '',
+        neighborhood: company.neighborhood || '',
+        city: company.city || '',
+        state: company.state || 'SP',
+      });
+    }
+  }, [company]);
 
   // Redirecionar colaboradores não-admin para o dashboard
   useEffect(() => {
@@ -69,12 +94,17 @@ export default function EmpresaConfigPage() {
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
-    updateCompany(formData);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setSaving(true);
+    try {
+      await updateCompany(formData);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -307,10 +337,20 @@ export default function EmpresaConfigPage() {
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
               type="submit"
-              className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer"
+              disabled={saving}
+              className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer"
             >
-              <Check className="w-4 h-4" />
-              <span>Salvar Alterações da Empresa</span>
+              {saving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Salvando no Servidor...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Salvar Alterações da Empresa</span>
+                </>
+              )}
             </button>
           </div>
         )}

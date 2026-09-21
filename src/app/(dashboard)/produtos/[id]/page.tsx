@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { CommissionType, Product } from '@/types/database';
+import { STANDARD_UNITS } from '@/lib/productConstants';
 import {
   ArrowLeft,
   Check,
@@ -319,19 +320,11 @@ export default function EditarProdutoPage() {
                 onChange={(e) => setUnit(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
-                <option value="UN">UN - Unidade</option>
-                <option value="SC">SC - Saco</option>
-                <option value="KG">KG - Quilograma</option>
-                <option value="G">G - Grama</option>
-                <option value="L">L - Litro</option>
-                <option value="ML">ML - Mililitro</option>
-                <option value="M">M - Metro</option>
-                <option value="M²">M² - Metro Quadrado</option>
-                <option value="M³">M³ - Metro Cúbico</option>
-                <option value="CX">CX - Caixa</option>
-                <option value="RL">RL - Rolo</option>
-                <option value="PCT">PCT - Pacote</option>
-                <option value="MIL">MIL - Milheiro</option>
+                {STANDARD_UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -397,12 +390,16 @@ export default function EditarProdutoPage() {
               <label className="block text-xs font-bold text-slate-700 mb-1">Tipo de Comissão</label>
               <select
                 value={commissionType}
-                onChange={(e) => setCommissionType(e.target.value as CommissionType)}
+                onChange={(e) => {
+                  const val = e.target.value as CommissionType;
+                  setCommissionType(val);
+                  if (val === 'NONE') setCommissionValue(0);
+                }}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="NONE">Sem Comissão (0)</option>
-                <option value="PERCENTAGE">Percentual sobre o valor da venda (%)</option>
-                <option value="FIXED">Valor Fixo por unidade vendida (R$)</option>
+                <option value="NONE">Sem comissão (0)</option>
+                <option value="PERCENTAGE">Percentual (%)</option>
+                <option value="FIXED">Valor fixo (R$)</option>
               </select>
             </div>
 

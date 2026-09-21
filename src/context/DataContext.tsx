@@ -94,6 +94,8 @@ interface DataContextType {
   addProduct: (product: Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Product;
   updateProduct: (id: string, product: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
+  bulkUpdateProducts: (ids: string[], updates: Partial<Product>) => Promise<void>;
+  bulkDeleteProducts: (ids: string[]) => Promise<void>;
   bulkImportProducts: (
     newProducts: Array<Omit<Product, 'id' | 'company_id' | 'created_at' | 'updated_at'>>,
     updateProducts: Array<{ id: string } & Partial<Product>>
@@ -294,10 +296,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // 2. Clientes
       fetch(`/api/customers?company_id=${company.id}`)
         .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
+        .then(async (data) => {
           if (data && data.success && Array.isArray(data.customers)) {
-            setCustomers(data.customers);
-            safeSetItem(`negociapro_customers${key}`, JSON.stringify(data.customers));
+            let serverCustomers: Customer[] = data.customers;
+
+            // Se no cache local houver clientes pendentes com ID provisório (cust-*), sincronizar com o banco
+            const localRaw = localStorage.getItem(`negociapro_customers${key}`);
+            if (localRaw) {
+              try {
+                const localList: Customer[] = JSON.parse(localRaw);
+                const pending = localList.filter((c) => c.id?.startsWith('cust-'));
+                for (const pend of pending) {
+                  const alreadySaved = serverCustomers.some(
+                    (sc) => sc.document && sc.document.replace(/\D/g, '') === pend.document.replace(/\D/g, '')
+                  );
+                  if (!alreadySaved) {
+                    try {
+                      const pushRes = await fetch('/api/customers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ company_id: company.id, customer: pend }),
+                      });
+                      const pushData = await pushRes.json();
+                      if (pushData.success && pushData.customer) {
+                        serverCustomers = [pushData.customer, ...serverCustomers];
+                      }
+                    } catch {}
+                  }
+                }
+              } catch {}
+            }
+
+            setCustomers(serverCustomers);
+            safeSetItem(`negociapro_customers${key}`, JSON.stringify(serverCustomers));
           }
         })
         .catch(() => {});
@@ -591,6 +622,90 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
   };
+
+  // Sincronização periódica e em tempo real entre múltiplos navegadores e abas
+  useEffect(() => {
+    if (!company?.id || isDemoCompany || typeof window === 'undefined') return;
+
+    let isMounted = true;
+
+    const refreshLiveServerData = () => {
+      if (!isMounted || document.visibilityState === 'hidden') return;
+
+      // Sincronizar clientes
+      fetch(`/api/customers?company_id=${company.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.success && Array.isArray(data.customers)) {
+            setCustomers((prev) => {
+              if (
+                prev.length !== data.customers.length ||
+                data.customers.some((sc: Customer, idx: number) => sc.id !== prev[idx]?.id)
+              ) {
+                safeSetItem(`negociapro_customers${tenantKey}`, JSON.stringify(data.customers));
+                return data.customers;
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+
+      // Sincronizar produtos
+      fetch(`/api/products?company_id=${company.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.success && Array.isArray(data.products) && data.products.length > 0) {
+            setProducts((prev) => {
+              if (
+                prev.length !== data.products.length ||
+                data.products.some(
+                  (sp: Product, idx: number) =>
+                    sp.id !== prev[idx]?.id ||
+                    sp.current_stock !== prev[idx]?.current_stock ||
+                    sp.selling_price !== prev[idx]?.selling_price
+                )
+              ) {
+                safeSetItem(`negociapro_products${tenantKey}`, JSON.stringify(data.products));
+                return data.products;
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+
+      // Sincronizar vendas
+      fetch(`/api/sales?company_id=${company.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.success && Array.isArray(data.sales)) {
+            setSales((prev) => {
+              if (
+                prev.length !== data.sales.length ||
+                data.sales.some((ss: any, idx: number) => ss.id !== prev[idx]?.id)
+              ) {
+                safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(data.sales));
+                return data.sales;
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    const intervalId = setInterval(refreshLiveServerData, 8000);
+    window.addEventListener('focus', refreshLiveServerData);
+    window.addEventListener('visibilitychange', refreshLiveServerData);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', refreshLiveServerData);
+      window.removeEventListener('visibilitychange', refreshLiveServerData);
+    };
+  }, [company?.id, isDemoCompany, tenantKey]);
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
@@ -1002,7 +1117,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data && data.success && data.customer) {
-            setCustomers((prev) => prev.map((c) => (c.id === tempId ? data.customer : c)));
+            setCustomers((prev) => {
+              const mapped = prev.map((c) => (c.id === tempId ? data.customer : c));
+              safeSetItem(`negociapro_customers${tenantKey}`, JSON.stringify(mapped));
+              return mapped;
+            });
           }
         })
         .catch((err) => console.warn('Falha ao persistir cliente no Supabase:', err));
@@ -1093,6 +1212,65 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Edição em massa de múltiplos produtos selecionados
+  const bulkUpdateProducts = async (ids: string[], updates: Partial<Product>): Promise<void> => {
+    if (!ids || ids.length === 0) return;
+    const idsSet = new Set(ids);
+    const now = new Date().toISOString();
+
+    const updated = products.map((p) => {
+      if (idsSet.has(p.id)) {
+        return {
+          ...p,
+          ...updates,
+          updated_at: now,
+        };
+      }
+      return p;
+    });
+
+    saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      try {
+        await fetch('/api/products', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: company.id,
+            ids,
+            updates,
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha no update em lote no Supabase:', err);
+      }
+    }
+  };
+
+  // Exclusão em massa de produtos
+  const bulkDeleteProducts = async (ids: string[]): Promise<void> => {
+    if (!ids || ids.length === 0) return;
+    const idsSet = new Set(ids);
+    const updated = products.filter((p) => !idsSet.has(p.id));
+    saveProd(updated);
+
+    if (company?.id && !isDemoCompany) {
+      try {
+        await fetch('/api/products', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: company.id,
+            ids,
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha na exclusão em massa no Supabase:', err);
+      }
+    }
+  };
+
   // Importação em lote atômica: todos os novos e atualizações são aplicados
   // em um único setProducts/saveProd para evitar condição de corrida com estado stale
   const bulkImportProducts = (
@@ -1126,12 +1304,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const finalProducts = [...created, ...merged];
     saveProd(finalProducts);
 
-    if (company?.id && !isDemoCompany && created.length > 0) {
-      fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id: company.id, products: created }),
-      }).catch((err) => console.warn('Falha ao sincronizar lote de produtos no Supabase:', err));
+    if (company?.id && !isDemoCompany) {
+      if (created.length > 0) {
+        fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, products: created }),
+        }).catch((err) => console.warn('Falha ao sincronizar novos produtos no Supabase:', err));
+      }
+
+      if (updateProds.length > 0) {
+        fetch('/api/products', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: company.id, products: updateProds }),
+        }).catch((err) => console.warn('Falha ao sincronizar lote de produtos atualizados no Supabase:', err));
+      }
     }
 
     return { added: created.length, updated: updateProds.length };
@@ -1652,6 +1840,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         addProduct,
         updateProduct,
         deleteProduct,
+        bulkUpdateProducts,
+        bulkDeleteProducts,
         bulkImportProducts,
         adjustStock,
         addProfessional,
