@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Sale, ReceiptTemplateType } from '@/types/database';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
@@ -27,7 +27,7 @@ export default function SaleReceiptModal({
   isInitialSuccess = false,
 }: SaleReceiptModalProps) {
   const { company } = useAuth();
-  const { receiptSettings } = useData();
+  const { receiptSettings, products } = useData();
 
   const [activeTemplate, setActiveTemplate] = useState<ReceiptTemplateType>(
     receiptSettings.template_default || 'A4'
@@ -36,6 +36,23 @@ export default function SaleReceiptModal({
   // Refs para capturar o HTML dos comprovantes renderizados
   const receiptA4Ref = useRef<HTMLDivElement>(null);
   const receiptThermalRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Re-enriquece os itens da venda com o objeto Product completo.
+   * Isso resolve o bug onde items vindos do servidor/localStorage
+   * têm product_id mas product === undefined/null.
+   */
+  const enrichedSale = useMemo((): Sale => {
+    if (!sale.items || sale.items.length === 0) return sale;
+    const enrichedItems = sale.items.map(item => {
+      // Se já tem product com nome, não precisa enriquecer
+      if (item.product && item.product.name) return item;
+      // Busca o produto pelo product_id nos produtos do contexto
+      const found = products.find(p => p.id === item.product_id);
+      return { ...item, product: found || item.product };
+    });
+    return { ...sale, items: enrichedItems };
+  }, [sale, products]);
 
   /**
    * Abre janela popup isolada com apenas o conteúdo do comprovante.
@@ -282,7 +299,7 @@ export default function SaleReceiptModal({
             >
               <div ref={receiptA4Ref}>
                 <SaleReceipt
-                  sale={sale}
+                  sale={enrichedSale}
                   company={company}
                   settings={receiptSettings}
                   template="A4"
@@ -298,7 +315,7 @@ export default function SaleReceiptModal({
             >
               <div ref={receiptThermalRef}>
                 <SaleReceipt
-                  sale={sale}
+                  sale={enrichedSale}
                   company={company}
                   settings={receiptSettings}
                   template="THERMAL_80"
