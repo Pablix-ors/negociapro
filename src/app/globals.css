@@ -106,3 +106,52 @@ body {
 .scrollbar-visible::-webkit-scrollbar-thumb:hover {
   background: #1d4ed8 !important;
 }
+
+/* ==========================================================================
+   ESTILOS DE IMPRESSÃO - COMPROVANTE NÃO FISCAL (A4 & CUPOM TÉRMICO 80MM)
+   ========================================================================== */
+@media print {
+  /* Ocultar elementos normais da interface: navbar, sidebar, botões, tooltips, modais padrão */
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Qualquer elemento marcado com no-print não será impresso */
+  .no-print,
+  aside,
+  header,
+  nav,
+  .sidebar,
+  button,
+  .print-hidden {
+    display: none !important;
+  }
+
+  /* Garante que o container de impressão ocupe tudo e seja visível */
+  .printable-receipt-container {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Modo Cupom Térmico: Página contínua sem quebra artificial e margens zeradas */
+  body.print-mode-cupom {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+@page {
+  margin: 8mm;
+}

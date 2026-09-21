@@ -181,12 +181,153 @@ export interface Sale {
   commission_total: number;
   payment_method_id?: string | null;
   payment_method?: PaymentMethod;
+  payment_method_name?: string | null;
+  // Estrutura de parcelamento / prazo
+  payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+  installments_count?: number;
+  installments_plan?: Array<{
+    number: number;
+    due_date: string;
+    amount: number;
+  }>;
   notes?: string | null;
   sold_at: string;
   created_at: string;
   updated_at: string;
   items?: SaleItem[];
 }
+
+export type ReceivableStatus = 'OPEN' | 'DUE_TODAY' | 'OVERDUE' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED' | 'RENEGOTIATED';
+
+export interface AccountReceivable {
+  id: string;
+  company_id: string;
+  sale_id: string;
+  sale_number: number;
+  customer_id: string;
+  customer_name: string;
+  customer_document?: string | null;
+  professional_id?: string | null;
+  professional_name?: string | null;
+  installment_number: number;
+  total_installments: number;
+  due_date: string; // YYYY-MM-DD
+  original_amount: number;
+  discount_amount: number;
+  interest_amount: number;
+  paid_amount: number;
+  balance: number; // Saldo em aberto
+  status: ReceivableStatus;
+  payment_method_predicted?: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentReceiptRecord {
+  id: string;
+  company_id: string;
+  receivable_id: string;
+  sale_id: string;
+  sale_number: number;
+  customer_id: string;
+  customer_name: string;
+  payment_date: string;
+  amount_paid: number;
+  payment_method: string;
+  cash_session_id?: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export type CashMovementType = 'ENTRADA' | 'SAÍDA';
+
+export type CashMovementCategory =
+  | 'SALDO_INICIAL'
+  | 'VENDA_A_VISTA'
+  | 'RECEBIMENTO_CONTA'
+  | 'SUPRIMENTO'
+  | 'SANGRIA'
+  | 'DESPESA'
+  | 'AJUSTE_POSITIVO'
+  | 'AJUSTE_NEGATIVO';
+
+export interface CashMovement {
+  id: string;
+  company_id: string;
+  cash_session_id: string;
+  timestamp: string;
+  type: CashMovementType;
+  category: CashMovementCategory;
+  description: string;
+  origin: 'VENDA' | 'CONTA_A_RECEBER' | 'MANUAL' | 'ABERTURA_CAIXA';
+  reference_id?: string | null;
+  payment_method: string;
+  amount: number;
+  current_balance_after: number;
+  user_id?: string | null;
+  user_name?: string | null;
+  notes?: string | null;
+}
+
+export interface CashRegisterSession {
+  id: string;
+  company_id: string;
+  name: string;
+  opened_at: string;
+  closed_at?: string | null;
+  opened_by_user_id?: string | null;
+  opened_by_name?: string | null;
+  closed_by_user_id?: string | null;
+  closed_by_name?: string | null;
+  initial_balance: number;
+  total_inflows: number;
+  total_outflows: number;
+  expected_balance: number;
+  counted_balance?: number | null;
+  difference?: number | null;
+  difference_type?: 'CORRECT' | 'SHORTAGE' | 'SURPLUS' | null;
+  status: 'OPEN' | 'CLOSED';
+  notes?: string | null;
+}
+
+export type ReceiptTemplateType = 'A4' | 'THERMAL_80';
+
+export interface ReceiptSettings {
+  template_default: ReceiptTemplateType;
+  use_custom_logo: boolean;
+  show_company_name: boolean;
+  show_cnpj_cpf: boolean;
+  show_address: boolean;
+  show_phone: boolean;
+  show_email: boolean;
+  show_customer: boolean;
+  show_customer_document: boolean;
+  show_seller: boolean;
+  show_product_code: boolean;
+  show_notes: boolean;
+  show_payment_method: boolean;
+  footer_message: string;
+}
+
+export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
+  template_default: 'A4',
+  use_custom_logo: true,
+  show_company_name: true,
+  show_cnpj_cpf: true,
+  show_address: true,
+  show_phone: true,
+  show_email: true,
+  show_customer: true,
+  show_customer_document: true,
+  show_seller: true,
+  show_product_code: true,
+  show_notes: true,
+  show_payment_method: true,
+  footer_message: 'Obrigado pela preferência!',
+};
 
 export interface CommissionRecord {
   id: string;

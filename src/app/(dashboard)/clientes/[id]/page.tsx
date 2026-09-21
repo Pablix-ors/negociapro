@@ -33,14 +33,14 @@ import {
 export default function ClienteDetalhesPage() {
   const params = useParams();
   const router = useRouter();
-  const { customers, sales, updateCustomer, deleteCustomer } = useData();
+  const { customers, sales, receivables, paymentReceipts, updateCustomer, deleteCustomer } = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
   const customerId = params?.id as string;
   const customer = customers.find((c) => c.id === customerId);
 
-  const [activeTab, setActiveTab] = useState<'resumo' | 'compras' | 'produtos' | 'negociacoes'>('resumo');
+  const [activeTab, setActiveTab] = useState<'resumo' | 'compras' | 'produtos' | 'negociacoes' | 'financeiro'>('resumo');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Estados do Modal de Edição
@@ -346,6 +346,16 @@ export default function ClienteDetalhesPage() {
           >
             Histórico de Negociações
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('financeiro')}
+            className={`pb-3 border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === 'financeiro' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>Financeiro & Contas</span>
+          </button>
         </nav>
       </div>
 
@@ -446,6 +456,140 @@ export default function ClienteDetalhesPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'financeiro' && (() => {
+        const clientReceivables = receivables.filter((r) => r.customer_id === customer.id);
+        const clientReceipts = paymentReceipts.filter((p) => p.customer_id === customer.id);
+
+        const totalReceivable = clientReceivables.reduce((acc, r) => acc + (r.status !== 'CANCELLED' ? r.original_amount : 0), 0);
+        const totalPaid = clientReceivables.reduce((acc, r) => acc + (r.paid_amount || 0), 0);
+        const totalOpen = clientReceivables.reduce((acc, r) => acc + (r.status !== 'CANCELLED' && r.status !== 'PAID' ? r.balance : 0), 0);
+        const totalOverdue = clientReceivables.reduce((acc, r) => acc + (r.status === 'OVERDUE' ? r.balance : 0), 0);
+
+        return (
+          <div className="space-y-6">
+            {/* Cards de Métricas do Cliente */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total a Receber</span>
+                <span className="text-lg font-black text-slate-900 mt-1 block">{formatCurrency(totalReceivable)}</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Pago</span>
+                <span className="text-lg font-black text-emerald-600 mt-1 block">{formatCurrency(totalPaid)}</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Em Aberto</span>
+                <span className="text-lg font-black text-blue-700 mt-1 block">{formatCurrency(totalOpen)}</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Vencido</span>
+                <span className="text-lg font-black text-rose-600 mt-1 block">{formatCurrency(totalOverdue)}</span>
+              </div>
+            </div>
+
+            {/* Tabela de Contas e Parcelas */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                  Títulos e Parcelas ({clientReceivables.length})
+                </h3>
+                <Link
+                  href="/financeiro?aba=receber"
+                  className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                >
+                  Ir para Contas a Receber &rarr;
+                </Link>
+              </div>
+
+              {clientReceivables.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">
+                  Nenhum título ou parcela a receber gerada para este cliente.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Vencimento</th>
+                        <th className="p-3">Venda</th>
+                        <th className="p-3 text-center">Parcela</th>
+                        <th className="p-3 text-right">Valor Original</th>
+                        <th className="p-3 text-right">Valor Pago</th>
+                        <th className="p-3 text-right">Saldo</th>
+                        <th className="p-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {clientReceivables.map((rec) => (
+                        <tr key={rec.id} className="hover:bg-slate-50">
+                          <td className="p-3 font-semibold text-slate-800">
+                            {new Date(`${rec.due_date}T12:00:00`).toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="p-3 font-bold text-blue-600">#{rec.sale_number}</td>
+                          <td className="p-3 text-center text-slate-600 font-bold">{rec.installment_number}/{rec.total_installments}</td>
+                          <td className="p-3 text-right font-medium text-slate-700">{formatCurrency(rec.original_amount)}</td>
+                          <td className="p-3 text-right font-medium text-emerald-600">{formatCurrency(rec.paid_amount)}</td>
+                          <td className="p-3 text-right font-black text-blue-900">{formatCurrency(rec.balance)}</td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              rec.status === 'PAID'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : rec.status === 'OVERDUE'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : rec.status === 'PARTIALLY_PAID'
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {rec.status === 'PAID' ? 'Paga' : rec.status === 'OVERDUE' ? 'Vencida' : rec.status === 'PARTIALLY_PAID' ? 'Parcial' : 'Em Aberto'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Histórico de Recebimentos Realizados */}
+            {clientReceipts.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                    Histórico de Pagamentos Efetivados ({clientReceipts.length})
+                  </h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Data</th>
+                        <th className="p-3">Venda</th>
+                        <th className="p-3">Forma de Pagamento</th>
+                        <th className="p-3">Caixa / Conta</th>
+                        <th className="p-3 text-right">Valor Recebido</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {clientReceipts.map((recpt) => (
+                        <tr key={recpt.id} className="hover:bg-slate-50">
+                          <td className="p-3 text-slate-700">{new Date(recpt.payment_date).toLocaleString('pt-BR')}</td>
+                          <td className="p-3 font-bold text-blue-600">#{recpt.sale_number}</td>
+                          <td className="p-3 font-semibold text-slate-800">{recpt.payment_method}</td>
+                          <td className="p-3 text-slate-600">Caixa Principal</td>
+                          <td className="p-3 text-right font-black text-emerald-600">{formatCurrency(recpt.amount_paid)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
 
       {/* Modal de Edição de Cliente com suporte a CNPJAPI para PJ */}
       {isEditModalOpen && (

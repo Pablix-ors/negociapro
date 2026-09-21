@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/formatters';
-import { CommissionStatus } from '@/types/database';
+import { CommissionStatus, AccountReceivable, CashMovement, CashRegisterSession, ReceivableStatus } from '@/types/database';
 import {
   DollarSign,
   Search,
@@ -35,13 +35,46 @@ import {
   CheckCircle,
   ShieldAlert,
   ArrowLeft,
+  Coins,
+  RefreshCw,
+  Plus,
+  Minus,
+  Lock,
+  Unlock,
+  AlertTriangle,
+  FileText,
+  Printer,
+  ChevronRight,
+  Eye,
 } from 'lucide-react';
 
-type FinancialTab = 'overview' | 'commissions' | 'sales_cashflow';
+type FinancialTab = 'overview' | 'receivables' | 'cash' | 'commissions' | 'sales_cashflow';
+type PeriodFilter = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'LAST_MONTH' | 'LAST_30_DAYS' | 'ALL';
 
-export default function FinanceiroPage() {
+function FinanceiroContent() {
   const router = useRouter();
-  const { sales, commissions, professionals, customers, markCommissionAsPaid } = useData();
+  const searchParams = useSearchParams();
+  const initialAba = searchParams.get('aba');
+  const initialVenda = searchParams.get('venda') || '';
+
+  const {
+    sales,
+    commissions,
+    professionals,
+    customers,
+    markCommissionAsPaid,
+    receivables,
+    paymentReceipts,
+    cashSession,
+    cashSessionsHistory,
+    cashMovements,
+    receivePayment,
+    renegotiateReceivable,
+    cancelReceivable,
+    openCashRegister,
+    addCashMovement,
+    closeCashRegister,
+  } = useData();
   const { user, isLoading } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -56,7 +89,60 @@ export default function FinanceiroPage() {
   }, [isLoading, user, isAdmin, router]);
 
   // Abas do Financeiro
-  const [activeTab, setActiveTab] = useState<FinancialTab>('overview');
+  const [activeTab, setActiveTab] = useState<FinancialTab>(() => {
+    if (initialAba === 'receber') return 'receivables';
+    if (initialAba === 'caixa') return 'cash';
+    if (initialAba === 'comissoes') return 'commissions';
+    return 'overview';
+  });
+
+  // Filtro de Período Global
+  const [globalPeriod, setGlobalPeriod] = useState<PeriodFilter>('ALL');
+
+  // Filtros de Contas a Receber
+  const [recSearch, setRecSearch] = useState(initialVenda);
+  const [recStatusFilter, setRecStatusFilter] = useState<'ALL' | ReceivableStatus>('ALL');
+  const [recCustomerFilter, setRecCustomerFilter] = useState<string>('ALL');
+  const [isRecFiltersOpen, setIsRecFiltersOpen] = useState(false);
+  const [recDateStart, setRecDateStart] = useState('');
+  const [recDateEnd, setRecDateEnd] = useState('');
+  const [recMinValue, setRecMinValue] = useState('');
+  const [recMaxValue, setRecMaxValue] = useState('');
+
+  // Modais de Contas a Receber
+  const [selectedReceivable, setSelectedReceivable] = useState<AccountReceivable | null>(null);
+  const [payReceivableModalOpen, setPayReceivableModalOpen] = useState(false);
+  const [targetReceivable, setTargetReceivable] = useState<AccountReceivable | null>(null);
+  const [payRecAmount, setPayRecAmount] = useState<number>(0);
+  const [payRecMethod, setPayRecMethod] = useState<string>('Dinheiro');
+  const [payRecDate, setPayRecDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [payRecNotes, setPayRecNotes] = useState<string>('');
+
+  // Modal de Cancelamento de Conta
+  const [cancelRecModalOpen, setCancelRecModalOpen] = useState(false);
+  const [cancelRecReason, setCancelRecReason] = useState('');
+
+  // Modal de Renegociação de Conta
+  const [renegotiateModalOpen, setRenegotiateModalOpen] = useState(false);
+  const [renegotiateParts, setRenegotiateParts] = useState(2);
+  const [renegotiateReason, setRenegotiateReason] = useState('');
+
+  // Modais do Caixa
+  const [openCashModalOpen, setOpenCashModalOpen] = useState(false);
+  const [openCashInitialBalance, setOpenCashInitialBalance] = useState<number>(200);
+  const [openCashNotes, setOpenCashNotes] = useState<string>('');
+
+  const [closeCashModalOpen, setCloseCashModalOpen] = useState(false);
+  const [closeCashCounted, setCloseCashCounted] = useState<number>(0);
+  const [closeCashNotes, setCloseCashNotes] = useState<string>('');
+
+  const [movementModalOpen, setMovementModalOpen] = useState(false);
+  const [movType, setMovType] = useState<'ENTRADA' | 'SAÍDA'>('SAÍDA');
+  const [movCategory, setMovCategory] = useState<'SANGRIA' | 'SUPRIMENTO' | 'DESPESA' | 'AJUSTE_POSITIVO' | 'AJUSTE_NEGATIVO'>('SANGRIA');
+  const [movAmount, setMovAmount] = useState<number>(50);
+  const [movMethod, setMovMethod] = useState<string>('Dinheiro');
+  const [movDescription, setMovDescription] = useState<string>('Sangria para depósito bancário');
+  const [movNotes, setMovNotes] = useState<string>('');
 
   // Filtros de Comissões
   const [filterQuery, setFilterQuery] = useState('');
@@ -255,108 +341,219 @@ export default function FinanceiroPage() {
         </div>
       </div>
 
+      {/* Barra de Filtro de Período Global */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-slate-500" />
+          <span className="text-xs font-bold text-slate-700">Período de Análise:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+          {[
+            { id: 'ALL', label: 'Todo Período' },
+            { id: 'TODAY', label: 'Hoje' },
+            { id: 'YESTERDAY', label: 'Ontem' },
+            { id: 'WEEK', label: 'Esta Semana' },
+            { id: 'MONTH', label: 'Este Mês' },
+            { id: 'LAST_MONTH', label: 'Mês Anterior' },
+            { id: 'LAST_30_DAYS', label: 'Últimos 30 Dias' },
+          ].map((period) => (
+            <button
+              key={period.id}
+              type="button"
+              onClick={() => setGlobalPeriod(period.id as PeriodFilter)}
+              className={`px-3 py-1.5 rounded-xl transition-all ${
+                globalPeriod === period.id
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              {period.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Cards de Métricas Principais (Executive KPI Bar) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {/* Faturamento Líquido */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-emerald-200 hover:shadow-md transition-all">
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs hover:border-emerald-200 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Faturamento Concluído
+              Faturamento Vendas
             </span>
             <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
-              <TrendingUp className="w-4 h-4" />
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-black text-slate-900 mt-1">
+          <p className="text-lg font-black text-slate-900 mt-1">
             {formatCurrency(totalRevenue)}
           </p>
-          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold mt-1">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>{completedSales.length} vendas registradas</span>
-          </div>
+          <span className="text-[10px] text-emerald-600 font-semibold mt-0.5 block">
+            {completedSales.length} pedidos
+          </span>
         </div>
 
-        {/* Saldo Líquido Pós-Comissões */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-blue-200 hover:shadow-md transition-all">
+        {/* Total a Receber */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs hover:border-blue-200 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Receita Pós-Comissões
+              Contas a Receber
             </span>
             <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-              <Wallet className="w-4 h-4" />
+              <Coins className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-black text-blue-700 mt-1">
-            {formatCurrency(netRevenueAfterCommissions)}
+          <p className="text-lg font-black text-blue-700 mt-1">
+            {formatCurrency(receivables.filter(r => r.status !== 'CANCELLED' && r.status !== 'PAID').reduce((acc, r) => acc + r.balance, 0))}
           </p>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            Faturamento (-) Comissões Totais
+          <span className="text-[10px] text-blue-600 font-semibold mt-0.5 block">
+            {receivables.filter(r => r.status !== 'CANCELLED' && r.status !== 'PAID').length} parcelas em aberto
+          </span>
+        </div>
+
+        {/* Vencido */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs hover:border-rose-200 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Contas Vencidas
+            </span>
+            <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+              <AlertCircle className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-lg font-black text-rose-600 mt-1">
+            {formatCurrency(receivables.filter(r => r.status === 'OVERDUE').reduce((acc, r) => acc + r.balance, 0))}
+          </p>
+          <span className="text-[10px] text-rose-600 font-semibold mt-0.5 block">
+            {receivables.filter(r => r.status === 'OVERDUE').length} parcelas vencidas
+          </span>
+        </div>
+
+        {/* Vencendo Hoje ou a Vencer */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs hover:border-amber-200 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              A Vencer (Próximos)
+            </span>
+            <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+              <Clock className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-lg font-black text-amber-700 mt-1">
+            {formatCurrency(receivables.filter(r => r.status === 'OPEN' || r.status === 'DUE_TODAY').reduce((acc, r) => acc + r.balance, 0))}
+          </p>
+          <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">
+            {receivables.filter(r => r.status === 'OPEN' || r.status === 'DUE_TODAY').length} parcelas futuras
+          </span>
+        </div>
+
+        {/* Saldo em Caixa */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs hover:border-indigo-200 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Saldo em Caixa
+            </span>
+            <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+              <Wallet className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-lg font-black text-indigo-700 mt-1">
+            {formatCurrency(cashSession?.expected_balance || 0)}
+          </p>
+          <span className="text-[10px] font-semibold mt-0.5 block">
+            {cashSession ? (
+              <span className="text-emerald-600">● Caixa Aberto</span>
+            ) : (
+              <span className="text-slate-400">Caixa Fechado</span>
+            )}
           </span>
         </div>
 
         {/* Comissões Pendentes */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-amber-200 hover:shadow-md transition-all">
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs hover:border-amber-200 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Comissões a Pagar
             </span>
             <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
-              <Clock className="w-4 h-4" />
+              <DollarSign className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-black text-amber-600 mt-1">
+          <p className="text-lg font-black text-amber-600 mt-1">
             {formatCurrency(pendingCommissionsTotal + approvedCommissionsTotal)}
           </p>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            {commissions.filter((c) => c.status !== 'PAGA' && c.status !== 'CANCELADA').length} repasses pendentes
-          </span>
-        </div>
-
-        {/* Comissões Já Pagas */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-emerald-200 hover:shadow-md transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Comissões Quitadas
-            </span>
-            <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-xl font-black text-emerald-600 mt-1">
-            {formatCurrency(paidCommissionsTotal)}
-          </p>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            {commissions.filter((c) => c.status === 'PAGA').length} repasses liquidados
+          <span className="text-[10px] text-slate-400 mt-0.5 block">
+            {commissions.filter((c) => c.status !== 'PAGA' && c.status !== 'CANCELADA').length} repasses
           </span>
         </div>
       </div>
 
       {/* Navegação entre Abas do Financeiro */}
-      <div className="flex border-b border-slate-200 bg-white px-2 pt-2 rounded-t-2xl shadow-xs">
+      <div className="flex border-b border-slate-200 bg-white px-2 pt-2 rounded-t-2xl shadow-xs overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('overview')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition-all ${
             activeTab === 'overview'
-              ? 'border-emerald-600 text-emerald-700'
+              ? 'border-blue-600 text-blue-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
           <TrendingUp className="w-4 h-4" />
-          <span>Visão Geral & Indicadores</span>
+          <span>Visão Geral & DRE</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('receivables')}
+          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition-all ${
+            activeTab === 'receivables'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Coins className="w-4 h-4" />
+          <span>Contas a Receber</span>
+          {receivables.filter(r => r.status === 'OVERDUE').length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800">
+              {receivables.filter(r => r.status === 'OVERDUE').length} vencidas
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('cash')}
+          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition-all ${
+            activeTab === 'cash'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          <span>Gestão de Caixa</span>
+          {cashSession ? (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+              Aberto
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+              Fechado
+            </span>
+          )}
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('commissions')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition-all ${
             activeTab === 'commissions'
-              ? 'border-emerald-600 text-emerald-700'
+              ? 'border-blue-600 text-blue-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
           <DollarSign className="w-4 h-4" />
-          <span>Gestão de Comissões</span>
+          <span>Comissões</span>
           {pendingCommissionsTotal > 0 && (
             <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">
               {commissions.filter((c) => c.status === 'PENDENTE').length}
@@ -367,17 +564,14 @@ export default function FinanceiroPage() {
         <button
           type="button"
           onClick={() => setActiveTab('sales_cashflow')}
-          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition-all ${
             activeTab === 'sales_cashflow'
-              ? 'border-emerald-600 text-emerald-700'
+              ? 'border-blue-600 text-blue-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
           <Receipt className="w-4 h-4" />
           <span>Faturamento de Vendas</span>
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-            {completedSales.length}
-          </span>
         </button>
       </div>
 
@@ -501,7 +695,1175 @@ export default function FinanceiroPage() {
         </div>
       )}
 
-      {/* CONTEÚDO DA ABA 2: GESTÃO DE COMISSÕES */}
+      {/* CONTEÚDO DA ABA: CONTAS A RECEBER */}
+      {activeTab === 'receivables' && (() => {
+        // Filtros combinados de contas a receber
+        const filteredReceivables = receivables.filter((r) => {
+          const q = recSearch.trim().toLowerCase();
+          if (q) {
+            const matches =
+              r.customer_name.toLowerCase().includes(q) ||
+              String(r.sale_number).includes(q) ||
+              (r.customer_document && r.customer_document.includes(q)) ||
+              `${r.installment_number}/${r.total_installments}`.includes(q);
+            if (!matches) return false;
+          }
+
+          if (recStatusFilter !== 'ALL' && r.status !== recStatusFilter) return false;
+          if (recCustomerFilter !== 'ALL' && r.customer_id !== recCustomerFilter) return false;
+          if (recDateStart && r.due_date < recDateStart) return false;
+          if (recDateEnd && r.due_date > recDateEnd) return false;
+          if (recMinValue && r.balance < parseFloat(recMinValue)) return false;
+          if (recMaxValue && r.balance > parseFloat(recMaxValue)) return false;
+
+          return true;
+        });
+
+        // Totais e Indicadores dos Cards
+        const totalReceivable = receivables.filter(r => r.status !== 'CANCELLED').reduce((acc, r) => acc + r.original_amount, 0);
+        const totalDueUpcoming = receivables.filter(r => r.status === 'OPEN' || r.status === 'DUE_TODAY').reduce((acc, r) => acc + r.balance, 0);
+        const totalOverdue = receivables.filter(r => r.status === 'OVERDUE').reduce((acc, r) => acc + r.balance, 0);
+        const totalPaidPeriod = receivables.reduce((acc, r) => acc + (r.paid_amount || 0), 0);
+        const openCount = receivables.filter(r => r.status !== 'CANCELLED' && r.status !== 'PAID').length;
+
+        const openReceiveModal = (rec: AccountReceivable) => {
+          setTargetReceivable(rec);
+          setPayRecAmount(rec.balance);
+          setPayRecMethod(rec.payment_method_predicted || 'Dinheiro');
+          setPayRecDate(new Date().toISOString().split('T')[0]);
+          setPayRecNotes('');
+          setPayReceivableModalOpen(true);
+        };
+
+        const handleConfirmReceipt = (e: React.FormEvent) => {
+          e.preventDefault();
+          if (!targetReceivable) return;
+
+          const res = receivePayment({
+            receivable_id: targetReceivable.id,
+            amount: payRecAmount,
+            payment_method: payRecMethod,
+            payment_date: payRecDate ? new Date(`${payRecDate}T12:00:00`).toISOString() : undefined,
+            notes: payRecNotes,
+          });
+
+          if (!res.success) {
+            alert(res.message || 'Erro ao registrar recebimento.');
+            return;
+          }
+
+          setPayReceivableModalOpen(false);
+          setTargetReceivable(null);
+        };
+
+        const handleConfirmCancelReceivable = () => {
+          if (!selectedReceivable) return;
+          if (!cancelRecReason.trim()) {
+            alert('Por favor, informe a justificativa do cancelamento.');
+            return;
+          }
+          cancelReceivable(selectedReceivable.id, cancelRecReason);
+          setCancelRecModalOpen(false);
+          setSelectedReceivable(null);
+          setCancelRecReason('');
+        };
+
+        const handleConfirmRenegotiate = () => {
+          if (!selectedReceivable) return;
+          if (!renegotiateReason.trim()) {
+            alert('Por favor, informe o motivo do novo acordo.');
+            return;
+          }
+
+          const bal = selectedReceivable.balance;
+          const count = Math.max(2, renegotiateParts);
+          const base = Number((bal / count).toFixed(2));
+          const rem = Number((bal - base * count).toFixed(2));
+
+          const newInsts = [];
+          for (let i = 0; i < count; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() + (i + 1) * 30);
+            newInsts.push({
+              due_date: d.toISOString().split('T')[0],
+              amount: i === 0 ? Number((base + rem).toFixed(2)) : base,
+            });
+          }
+
+          renegotiateReceivable({
+            receivable_id: selectedReceivable.id,
+            new_installments: newInsts,
+            reason: renegotiateReason,
+          });
+
+          setRenegotiateModalOpen(false);
+          setSelectedReceivable(null);
+          setRenegotiateReason('');
+        };
+
+        return (
+          <div className="space-y-6 animate-in fade-in">
+            {/* Top Cards de Contas a Receber */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Total a Receber</span>
+                <p className="text-xl font-black text-slate-900 mt-1">{formatCurrency(totalReceivable)}</p>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Títulos gerados</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">A Vencer</span>
+                <p className="text-xl font-black text-blue-700 mt-1">{formatCurrency(totalDueUpcoming)}</p>
+                <span className="text-[10px] text-blue-600 font-semibold mt-0.5 block">No prazo regular</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Vencido</span>
+                <p className="text-xl font-black text-rose-600 mt-1">{formatCurrency(totalOverdue)}</p>
+                <span className="text-[10px] text-rose-600 font-semibold mt-0.5 block">Atraso registrado</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Recebido no Período</span>
+                <p className="text-xl font-black text-emerald-600 mt-1">{formatCurrency(totalPaidPeriod)}</p>
+                <span className="text-[10px] text-emerald-600 font-semibold mt-0.5 block">Baixas efetuadas</span>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs col-span-2 md:col-span-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Parcelas em Aberto</span>
+                <p className="text-xl font-black text-amber-600 mt-1">{openCount}</p>
+                <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Aguardando quitação</span>
+              </div>
+            </div>
+
+            {/* Barra de Filtros e Busca */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={recSearch}
+                    onChange={(e) => setRecSearch(e.target.value)}
+                    placeholder="Pesquisar cliente, venda ou parcela..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecFiltersOpen(!isRecFiltersOpen)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all ${
+                      isRecFiltersOpen ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5" />
+                    <span>Filtros Avançados</span>
+                  </button>
+
+                  <select
+                    value={recStatusFilter}
+                    onChange={(e) => setRecStatusFilter(e.target.value as any)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800"
+                  >
+                    <option value="ALL">Todos os Status</option>
+                    <option value="OPEN">Em Aberto</option>
+                    <option value="DUE_TODAY">Vencendo Hoje</option>
+                    <option value="OVERDUE">Vencida</option>
+                    <option value="PARTIALLY_PAID">Parcialmente Paga</option>
+                    <option value="PAID">Paga</option>
+                    <option value="CANCELLED">Cancelada</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Filtros Avançados Expansíveis */}
+              {isRecFiltersOpen && (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 grid grid-cols-1 sm:grid-cols-4 gap-3 animate-in fade-in">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Cliente</label>
+                    <select
+                      value={recCustomerFilter}
+                      onChange={(e) => setRecCustomerFilter(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                    >
+                      <option value="ALL">Todos os Clientes</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Vencimento De</label>
+                    <input
+                      type="date"
+                      value={recDateStart}
+                      onChange={(e) => setRecDateStart(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Vencimento Até</label>
+                    <input
+                      type="date"
+                      value={recDateEnd}
+                      onChange={(e) => setRecDateEnd(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                    />
+                  </div>
+                  <div className="flex items-end space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecSearch('');
+                        setRecStatusFilter('ALL');
+                        setRecCustomerFilter('ALL');
+                        setRecDateStart('');
+                        setRecDateEnd('');
+                        setRecMinValue('');
+                        setRecMaxValue('');
+                      }}
+                      className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all text-center"
+                    >
+                      Limpar Filtros
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tabela de Contas a Receber */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+              {filteredReceivables.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Coins className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <h3 className="text-sm font-bold text-slate-800">Nenhuma conta a receber encontrada</h3>
+                  <p className="text-xs text-slate-500 mt-1">Vendas a prazo e parceladas criam títulos automaticamente nesta listagem.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[1000px]">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="p-3.5">Vencimento</th>
+                        <th className="p-3.5">Cliente</th>
+                        <th className="p-3.5">Venda</th>
+                        <th className="p-3.5 text-center">Parcela</th>
+                        <th className="p-3.5 text-right">Valor Original</th>
+                        <th className="p-3.5 text-right">Valor Pago</th>
+                        <th className="p-3.5 text-right">Saldo Atual</th>
+                        <th className="p-3.5 text-center">Status</th>
+                        <th className="p-3.5 text-center">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredReceivables.map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="p-3.5 font-bold text-slate-900 whitespace-nowrap">
+                            {new Date(`${r.due_date}T12:00:00`).toLocaleDateString('pt-BR')}
+                            {r.status === 'OVERDUE' && (
+                              <span className="text-[10px] text-rose-600 block font-normal">Atrasado</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 font-bold text-slate-800">
+                            <span>{r.customer_name}</span>
+                            {r.customer_document && (
+                              <span className="text-[11px] text-slate-400 block font-normal">{r.customer_document}</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 font-mono font-bold text-blue-600">#{r.sale_number}</td>
+                          <td className="p-3.5 text-center font-semibold text-slate-700">{r.installment_number}/{r.total_installments}</td>
+                          <td className="p-3.5 text-right text-slate-600 font-medium">{formatCurrency(r.original_amount)}</td>
+                          <td className="p-3.5 text-right text-emerald-600 font-bold">{formatCurrency(r.paid_amount)}</td>
+                          <td className="p-3.5 text-right font-black text-slate-900">{formatCurrency(r.balance)}</td>
+                          <td className="p-3.5 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                              r.status === 'PAID'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : r.status === 'OVERDUE'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : r.status === 'DUE_TODAY'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
+                                : r.status === 'PARTIALLY_PAID'
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                : r.status === 'CANCELLED'
+                                ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}>
+                              {r.status === 'PAID'
+                                ? 'Paga'
+                                : r.status === 'OVERDUE'
+                                ? 'Vencida'
+                                : r.status === 'DUE_TODAY'
+                                ? 'Vence Hoje'
+                                : r.status === 'PARTIALLY_PAID'
+                                ? 'Parcialmente Paga'
+                                : r.status === 'CANCELLED'
+                                ? 'Cancelada'
+                                : 'Em Aberto'}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center space-x-1.5">
+                              {r.status !== 'PAID' && r.status !== 'CANCELLED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => openReceiveModal(r)}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
+                                >
+                                  Receber
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedReceivable(r)}
+                                title="Ver Detalhes do Título"
+                                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal de Detalhes da Conta a Receber */}
+            {selectedReceivable && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                        <Coins className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-slate-900">Detalhes da Conta a Receber</h3>
+                        <p className="text-[11px] text-slate-400">Venda #{selectedReceivable.sale_number} • Parcela {selectedReceivable.installment_number}/{selectedReceivable.total_installments}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReceivable(null)}
+                      className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Cliente</span>
+                      <span className="font-bold text-slate-800 text-sm mt-0.5 block">{selectedReceivable.customer_name}</span>
+                      <span className="text-[11px] text-slate-500">{selectedReceivable.customer_document || 'Sem documento'}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Vencimento</span>
+                      <span className="font-bold text-blue-800 text-sm mt-0.5 block">
+                        {new Date(`${selectedReceivable.due_date}T12:00:00`).toLocaleDateString('pt-BR')}
+                      </span>
+                      <span className="text-[11px] text-slate-500">Status: {selectedReceivable.status}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Valor Original</span>
+                      <span className="font-bold text-slate-800 text-sm mt-0.5 block">{formatCurrency(selectedReceivable.original_amount)}</span>
+                      <span className="text-[10px] text-emerald-600 font-semibold">Pago: {formatCurrency(selectedReceivable.paid_amount)}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Saldo Devedor</span>
+                      <span className="font-black text-rose-600 text-base mt-0.5 block">{formatCurrency(selectedReceivable.balance)}</span>
+                    </div>
+                  </div>
+
+                  {selectedReceivable.notes && (
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-xs text-amber-900">
+                      <strong>Observações:</strong> {selectedReceivable.notes}
+                    </div>
+                  )}
+
+                  {/* Ações Gerenciais: Renegociar / Cancelar */}
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {selectedReceivable.status !== 'PAID' && selectedReceivable.status !== 'CANCELLED' && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setRenegotiateModalOpen(true)}
+                            className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all"
+                          >
+                            Renegociar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCancelRecModalOpen(true)}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all"
+                          >
+                            Cancelar Conta
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {selectedReceivable.status !== 'PAID' && selectedReceivable.status !== 'CANCELLED' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openReceiveModal(selectedReceivable);
+                            setSelectedReceivable(null);
+                          }}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20"
+                        >
+                          Receber Agora
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Registro de Recebimento (Total ou Parcial) */}
+            {payReceivableModalOpen && targetReceivable && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-base font-black text-slate-900">Registrar Recebimento</h3>
+                      <p className="text-xs text-slate-500">
+                        {targetReceivable.customer_name} • Venda #{targetReceivable.sale_number} (Parc. {targetReceivable.installment_number}/{targetReceivable.total_installments})
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPayReceivableModalOpen(false)}
+                      className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleConfirmReceipt} className="space-y-4">
+                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 flex justify-between items-center text-xs">
+                      <span className="font-bold text-blue-950">Saldo em Aberto:</span>
+                      <span className="font-black text-blue-800 text-sm">{formatCurrency(targetReceivable.balance)}</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Valor do Recebimento (R$) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max={targetReceivable.balance}
+                        required
+                        value={payRecAmount}
+                        onChange={(e) => setPayRecAmount(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-black text-emerald-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                      />
+                      {payRecAmount < targetReceivable.balance && (
+                        <p className="text-[11px] text-amber-700 mt-1 font-semibold">
+                          ⚠️ Pagamento Parcial: Restará R$ {(targetReceivable.balance - payRecAmount).toFixed(2)} em aberto.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Data do Recebimento</label>
+                        <input
+                          type="date"
+                          required
+                          value={payRecDate}
+                          onChange={(e) => setPayRecDate(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Forma de Pagamento</label>
+                        <select
+                          value={payRecMethod}
+                          onChange={(e) => setPayRecMethod(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 font-semibold"
+                        >
+                          <option value="Dinheiro">Dinheiro</option>
+                          <option value="PIX">PIX</option>
+                          <option value="Cartão de Débito">Cartão de Débito</option>
+                          <option value="Cartão de Crédito">Cartão de Crédito</option>
+                          <option value="Boleto">Boleto Bancário</option>
+                          <option value="Transferência">Transferência / TED</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Conta / Caixa de Destino</label>
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-center justify-between text-slate-700 font-semibold">
+                        <span>{cashSession?.name || 'Caixa Principal'}</span>
+                        <span className="text-[10px] text-emerald-600 font-bold">
+                          {cashSession ? 'Entrada Direta no Caixa Ativo' : 'Lançamento Contábil'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Observações (Opcional)</label>
+                      <input
+                        type="text"
+                        value={payRecNotes}
+                        onChange={(e) => setPayRecNotes(e.target.value)}
+                        placeholder="Ex: Recebido no balcão com recibo manual nº 41"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setPayReceivableModalOpen(false)}
+                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 flex items-center space-x-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Confirmar Recebimento</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Cancelamento de Conta a Receber */}
+            {cancelRecModalOpen && selectedReceivable && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center space-x-2 text-rose-600">
+                    <AlertTriangle className="w-5 h-5" />
+                    <h3 className="text-base font-black text-slate-900">Cancelar Conta a Receber</h3>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    O cancelamento não apaga o registro do banco de dados, preservando a auditoria e o histórico fiscal/comercial.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Motivo do Cancelamento *</label>
+                    <textarea
+                      rows={3}
+                      required
+                      value={cancelRecReason}
+                      onChange={(e) => setCancelRecReason(e.target.value)}
+                      placeholder="Ex: Acordo desfeito amigavelmente / Devolução de mercadoria..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setCancelRecModalOpen(false)}
+                      className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCancelReceivable}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold"
+                    >
+                      Confirmar Cancelamento
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Renegociação */}
+            {renegotiateModalOpen && selectedReceivable && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center space-x-2 text-amber-600">
+                    <RefreshCw className="w-5 h-5" />
+                    <h3 className="text-base font-black text-slate-900">Renegociar Dívida</h3>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    O saldo devedor atual de <strong>{formatCurrency(selectedReceivable.balance)}</strong> será desdobrado em um novo acordo de parcelamento, mantendo o histórico original intacto.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Número de Novas Parcelas</label>
+                    <div className="flex gap-2">
+                      {[2, 3, 4, 6].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setRenegotiateParts(num)}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                            renegotiateParts === num ? 'bg-amber-600 text-white border-amber-600' : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          {num}x de ~{formatCurrency(selectedReceivable.balance / num)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Motivo do Novo Acordo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={renegotiateReason}
+                      onChange={(e) => setRenegotiateReason(e.target.value)}
+                      placeholder="Ex: Renegociação concedida com prazo estendido"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setRenegotiateModalOpen(false)}
+                      className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmRenegotiate}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold"
+                    >
+                      Gerar Novo Acordo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* CONTEÚDO DA ABA: GESTÃO DE CAIXA & MOVIMENTAÇÕES */}
+      {activeTab === 'cash' && (() => {
+        const handleOpenCashSubmit = (e: React.FormEvent) => {
+          e.preventDefault();
+          openCashRegister({
+            name: 'Caixa Principal',
+            initial_balance: openCashInitialBalance,
+            notes: openCashNotes,
+          });
+          setOpenCashModalOpen(false);
+          setOpenCashNotes('');
+        };
+
+        const handleCloseCashSubmit = (e: React.FormEvent) => {
+          e.preventDefault();
+          closeCashRegister({
+            counted_balance: closeCashCounted,
+            notes: closeCashNotes,
+          });
+          setCloseCashModalOpen(false);
+          setCloseCashNotes('');
+        };
+
+        const handleManualMovementSubmit = (e: React.FormEvent) => {
+          e.preventDefault();
+          addCashMovement({
+            type: movType,
+            category: movCategory,
+            description: movDescription,
+            amount: movAmount,
+            payment_method: movMethod,
+            notes: movNotes,
+          });
+          setMovementModalOpen(false);
+          setMovNotes('');
+        };
+
+        const expectedBal = cashSession?.expected_balance || 0;
+        const diffClose = Number((closeCashCounted - expectedBal).toFixed(2));
+
+        return (
+          <div className="space-y-6 animate-in fade-in">
+            {/* Status do Caixa Atual */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                <div className="flex items-center space-x-3">
+                  <div className={`p-3 rounded-2xl ${
+                    cashSession ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <Wallet className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-black text-slate-900">
+                        {cashSession ? 'Caixa Aberto' : 'Caixa Fechado'}
+                      </h2>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        cashSession ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {cashSession ? 'Em Operação' : 'Encerrado'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {cashSession
+                        ? `Aberto por ${cashSession.opened_by_name || 'Operador'} em ${new Date(cashSession.opened_at).toLocaleString('pt-BR')}`
+                        : 'Abra o caixa para iniciar as movimentações físicas de vendas à vista e suprimentos.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {!cashSession ? (
+                    <button
+                      type="button"
+                      onClick={() => setOpenCashModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95"
+                    >
+                      <Unlock className="w-4 h-4" />
+                      <span>Abrir Caixa</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMovType('ENTRADA');
+                          setMovCategory('SUPRIMENTO');
+                          setMovDescription('Suprimento de Caixa (Troco Inicial)');
+                          setMovementModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Suprimento</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMovType('SAÍDA');
+                          setMovCategory('SANGRIA');
+                          setMovDescription('Sangria de Caixa (Retirada para Cofre/Banco)');
+                          setMovementModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-xl text-xs font-bold border border-rose-200"
+                      >
+                        <Minus className="w-4 h-4" />
+                        <span>Sangria</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCloseCashCounted(expectedBal);
+                          setCloseCashModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md"
+                      >
+                        <Lock className="w-4 h-4" />
+                        <span>Fechar Caixa</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Detalhes do Saldo e Movimentações da Sessão */}
+              {cashSession && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Saldo Inicial</span>
+                    <p className="text-lg font-black text-slate-900 mt-1">{formatCurrency(cashSession.initial_balance)}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">Total de Entradas</span>
+                    <p className="text-lg font-black text-emerald-600 mt-1">+{formatCurrency(cashSession.total_inflows)}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 block">Total de Saídas</span>
+                    <p className="text-lg font-black text-rose-600 mt-1">-{formatCurrency(cashSession.total_outflows)}</p>
+                  </div>
+                  <div className="p-4 bg-blue-50/70 rounded-2xl border border-blue-200">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-900 block">Saldo Esperado em Caixa</span>
+                    <p className="text-xl font-black text-blue-700 mt-1">{formatCurrency(cashSession.expected_balance)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tabela de Movimentações da Sessão */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Extrato de Movimentações do Caixa</h3>
+                  <p className="text-xs text-slate-400">Entradas à vista, recebimentos de parcelas, sangrias e suprimentos</p>
+                </div>
+                <span className="text-xs font-bold text-slate-500">{cashMovements.length} lançamentos</span>
+              </div>
+
+              {cashMovements.length === 0 ? (
+                <div className="p-10 text-center text-xs text-slate-400">
+                  Nenhuma movimentação financeira registrada neste caixa até o momento.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="p-3.5">Data / Hora</th>
+                        <th className="p-3.5 text-center">Tipo</th>
+                        <th className="p-3.5">Descrição</th>
+                        <th className="p-3.5">Forma</th>
+                        <th className="p-3.5">Responsável</th>
+                        <th className="p-3.5 text-right">Valor</th>
+                        <th className="p-3.5 text-right">Saldo do Caixa</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {cashMovements.map((mov) => (
+                        <tr key={mov.id} className="hover:bg-slate-50">
+                          <td className="p-3.5 text-slate-600 whitespace-nowrap">
+                            {new Date(mov.timestamp).toLocaleString('pt-BR')}
+                          </td>
+                          <td className="p-3.5 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              mov.type === 'ENTRADA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                              {mov.type}
+                            </span>
+                          </td>
+                          <td className="p-3.5 font-medium text-slate-800">
+                            <span>{mov.description}</span>
+                            {mov.notes && <span className="block text-[10px] text-slate-400 mt-0.5">{mov.notes}</span>}
+                          </td>
+                          <td className="p-3.5 text-slate-600 font-semibold">{mov.payment_method}</td>
+                          <td className="p-3.5 text-slate-600">{mov.user_name || 'Operador'}</td>
+                          <td className={`p-3.5 text-right font-black ${mov.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {mov.type === 'ENTRADA' ? '+' : '-'}{formatCurrency(mov.amount)}
+                          </td>
+                          <td className="p-3.5 text-right font-black text-slate-900">{formatCurrency(mov.current_balance_after)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Histórico de Fechamentos Anteriores */}
+            {cashSessionsHistory.length > 0 && (
+              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <h3 className="text-sm font-black text-slate-900">Histórico de Fechamentos de Caixa</h3>
+                  <p className="text-xs text-slate-400">Conferência física, saldo esperado vs contado e quebras/sobras</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Data Fechamento</th>
+                        <th className="p-3">Responsável</th>
+                        <th className="p-3 text-right">Saldo Inicial</th>
+                        <th className="p-3 text-right">Entradas</th>
+                        <th className="p-3 text-right">Saídas</th>
+                        <th className="p-3 text-right">Saldo Esperado</th>
+                        <th className="p-3 text-right">Saldo Contado</th>
+                        <th className="p-3 text-center">Diferença</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {cashSessionsHistory.map((sess) => (
+                        <tr key={sess.id} className="hover:bg-slate-50">
+                          <td className="p-3 text-slate-700">{sess.closed_at ? new Date(sess.closed_at).toLocaleString('pt-BR') : '-'}</td>
+                          <td className="p-3 text-slate-700">{sess.closed_by_name || 'Operador'}</td>
+                          <td className="p-3 text-right font-medium text-slate-600">{formatCurrency(sess.initial_balance)}</td>
+                          <td className="p-3 text-right font-medium text-emerald-600">+{formatCurrency(sess.total_inflows)}</td>
+                          <td className="p-3 text-right font-medium text-rose-600">-{formatCurrency(sess.total_outflows)}</td>
+                          <td className="p-3 text-right font-black text-blue-900">{formatCurrency(sess.expected_balance)}</td>
+                          <td className="p-3 text-right font-black text-slate-900">{sess.counted_balance !== undefined ? formatCurrency(sess.counted_balance) : '-'}</td>
+                          <td className="p-3 text-center">
+                            {!sess.difference || sess.difference === 0 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Conferido</span>
+                            ) : (sess.difference ?? 0) < 0 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700">Quebra: {formatCurrency(sess.difference)}</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700">Sobra: +{formatCurrency(sess.difference)}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Abertura de Caixa */}
+            {openCashModalOpen && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center space-x-2 text-emerald-600">
+                    <Unlock className="w-5 h-5" />
+                    <h3 className="text-base font-black text-slate-900">Abertura de Caixa</h3>
+                  </div>
+                  <form onSubmit={handleOpenCashSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Saldo Inicial (Troco) (R$) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={openCashInitialBalance}
+                        onChange={(e) => setOpenCashInitialBalance(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-black text-emerald-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Observações de Abertura</label>
+                      <input
+                        type="text"
+                        value={openCashNotes}
+                        onChange={(e) => setOpenCashNotes(e.target.value)}
+                        placeholder="Ex: Turno da manhã aberto com notas e moedas"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setOpenCashModalOpen(false)}
+                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold"
+                      >
+                        Confirmar Abertura
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Fechamento de Caixa com Conferência Física */}
+            {closeCashModalOpen && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center space-x-2 text-slate-900">
+                    <Lock className="w-5 h-5 text-slate-700" />
+                    <h3 className="text-base font-black">Conferência e Fechamento de Caixa</h3>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Saldo Inicial:</span>
+                      <span className="font-bold">{formatCurrency(cashSession?.initial_balance || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600">
+                      <span>(+) Entradas no Caixa:</span>
+                      <span className="font-bold">+{formatCurrency(cashSession?.total_inflows || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600">
+                      <span>(-) Saídas do Caixa:</span>
+                      <span className="font-bold">-{formatCurrency(cashSession?.total_outflows || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-blue-900 font-black text-sm pt-2 border-t border-slate-200">
+                      <span>Saldo Esperado:</span>
+                      <span>{formatCurrency(expectedBal)}</span>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleCloseCashSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Informe o Valor Contado no Caixa (R$) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={closeCashCounted}
+                        onChange={(e) => setCloseCashCounted(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-base font-black text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {/* Resultado da Conferência Física */}
+                    <div className={`p-3 rounded-xl border text-xs font-bold ${
+                      Math.abs(diffClose) < 0.01
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : diffClose < 0
+                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                        : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                    }`}>
+                      {Math.abs(diffClose) < 0.01 ? (
+                        <span>✓ Caixa conferido corretamente (Sem divergência).</span>
+                      ) : diffClose < 0 ? (
+                        <span>⚠️ Quebra de Caixa: Faltando {formatCurrency(Math.abs(diffClose))}</span>
+                      ) : (
+                        <span>ℹ️ Sobra de Caixa: Excedente de +{formatCurrency(diffClose)}</span>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Justificativa / Observação {Math.abs(diffClose) >= 0.01 ? '*' : ''}
+                      </label>
+                      <textarea
+                        rows={2}
+                        required={Math.abs(diffClose) >= 0.01}
+                        value={closeCashNotes}
+                        onChange={(e) => setCloseCashNotes(e.target.value)}
+                        placeholder="Ex: Diferença justificada por sangria de troco não computada"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setCloseCashModalOpen(false)}
+                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md"
+                      >
+                        Confirmar Fechamento
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Movimentação Manual (Suprimento ou Sangria) */}
+            {movementModalOpen && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <h3 className="text-base font-black text-slate-900">
+                      Nova Movimentação de Caixa ({movCategory})
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setMovementModalOpen(false)}
+                      className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleManualMovementSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Tipo de Movimento</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMovType('ENTRADA');
+                            setMovCategory('SUPRIMENTO');
+                          }}
+                          className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                            movType === 'ENTRADA' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          Entrada (Suprimento)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMovType('SAÍDA');
+                            setMovCategory('SANGRIA');
+                          }}
+                          className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                            movType === 'SAÍDA' ? 'bg-rose-600 text-white border-rose-600' : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          Saída (Sangria)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Valor (R$) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value={movAmount}
+                        onChange={(e) => setMovAmount(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-base font-black text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Descrição / Motivo *</label>
+                      <input
+                        type="text"
+                        required
+                        value={movDescription}
+                        onChange={(e) => setMovDescription(e.target.value)}
+                        placeholder="Ex: Retirada de sangria para depósito bancário"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Forma</label>
+                      <select
+                        value={movMethod}
+                        onChange={(e) => setMovMethod(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold"
+                      >
+                        <option value="Dinheiro">Dinheiro</option>
+                        <option value="PIX">PIX</option>
+                        <option value="Transferência">Transferência</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Observações Adicionais</label>
+                      <input
+                        type="text"
+                        value={movNotes}
+                        onChange={(e) => setMovNotes(e.target.value)}
+                        placeholder="Ex: Autorizado pelo Gerente"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setMovementModalOpen(false)}
+                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md"
+                      >
+                        Confirmar Lançamento
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* CONTEÚDO DA ABA: GESTÃO DE COMISSÕES */}
       {activeTab === 'commissions' && (
         <div className="space-y-4">
           {/* Filtros da Tabela de Comissões */}
@@ -863,5 +2225,13 @@ export default function FinanceiroPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function FinanceiroPage() {
+  return (
+    <React.Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Carregando módulo financeiro...</div>}>
+      <FinanceiroContent />
+    </React.Suspense>
   );
 }

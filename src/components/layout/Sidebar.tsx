@@ -16,6 +16,8 @@ import {
   Sparkles,
   Award,
   DollarSign,
+  FileText,
+  Receipt,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useMaster } from '@/context/MasterAuthContext';
@@ -33,6 +35,8 @@ const commercialNavigation = [
 
 const configNavigation = [
   { name: 'Minha Empresa', href: '/configuracoes/empresa', icon: Building2, adminOnly: true },
+  { name: 'Identidade Visual', href: '/configuracoes/identidade-visual', icon: Sparkles, adminOnly: true },
+  { name: 'Comprovantes', href: '/configuracoes/comprovantes', icon: FileText, adminOnly: true },
   { name: 'Usuários', href: '/configuracoes/usuarios', icon: UserCheck, adminOnly: true },
   { name: 'Preferências', href: '/configuracoes/preferencias', icon: Sliders, adminOnly: true },
 ];

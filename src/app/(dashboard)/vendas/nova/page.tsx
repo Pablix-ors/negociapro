@@ -6,6 +6,8 @@ import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatNumber } from '@/lib/formatters';
 import CustomerProductPriceHistory from '@/components/sales/CustomerProductPriceHistory';
+import SaleReceiptModal from '@/components/sales/SaleReceiptModal';
+import { Sale } from '@/types/database';
 import {
   ShoppingCart,
   User,
@@ -29,6 +31,7 @@ import {
   ChevronDown,
   Check,
   Building2,
+  CreditCard,
 } from 'lucide-react';
 
 interface CartItem {
@@ -71,9 +74,21 @@ function NovaVendaForm() {
   // Carrinho de Itens da Venda Atual
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<string>('PIX');
+  const [paymentMethod, setPaymentMethod] = useState<string>('PIX à Vista');
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [autoLoadedNotice, setAutoLoadedNotice] = useState<string | null>(null);
+  const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+
+  // Estados de Condições de Pagamento / Parcelamento
+  const [paymentType, setPaymentType] = useState<'A_VISTA' | 'A_PRAZO' | 'PARCELADO'>('A_VISTA');
+  const [installmentsCount, setInstallmentsCount] = useState<number>(3);
+  const [firstDueDate, setFirstDueDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [installmentInterval, setInstallmentInterval] = useState<string>('30');
+  const [customInstallments, setCustomInstallments] = useState<Array<{ number: number; due_date: string; amount: number; notes?: string }>>([]);
 
   // Estados de busca e filtros no seletor de Clientes
   const [customerSearch, setCustomerSearch] = useState('');
@@ -330,6 +345,15 @@ function NovaVendaForm() {
     return 0;
   };
 
+  // Preço efetivo unitário e verificação de trava de preço mínimo
+  const effectiveUnitPrice = quantity > 0 ? unitPrice - (discount / quantity) : unitPrice;
+  const isBelowMinPrice = Boolean(
+    currentProduct &&
+    currentProduct.min_price !== undefined &&
+    currentProduct.min_price > 0 &&
+    effectiveUnitPrice < currentProduct.min_price
+  );
+
   // Adicionar item ao carrinho
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -371,24 +395,79 @@ function NovaVendaForm() {
   const grandTotal = subtotal - totalDiscount;
   const totalCommission = cartItems.reduce((acc, item) => acc + item.commission_amount, 0);
 
-  // Validação de Preço Mínimo
-  const isBelowMinPrice = currentProduct && unitPrice - discount / quantity < currentProduct.min_price;
+  // Sincronizar plano de parcelas gerado automaticamente quando grandTotal, número de parcelas ou vencimento mudar
+  useEffect(() => {
+    if (paymentType === 'A_VISTA') {
+      setCustomInstallments([]);
+      return;
+    }
 
-  // Finalizar Venda com gravação atômica em price_history e comissão
+    const count = paymentType === 'A_PRAZO' ? 1 : Math.max(1, installmentsCount);
+    const baseAmount = Number((grandTotal / count).toFixed(2));
+    const remainder = Number((grandTotal - baseAmount * count).toFixed(2));
+
+    const generated: Array<{ number: number; due_date: string; amount: number; notes?: string }> = [];
+    const startDate = new Date(`${firstDueDate}T12:00:00`);
+
+    for (let i = 0; i < count; i++) {
+      const d = new Date(startDate);
+      if (installmentInterval === 'MENSAL') {
+        d.setMonth(d.getMonth() + i);
+      } else {
+        const days = parseInt(installmentInterval, 10) || 30;
+        d.setDate(d.getDate() + i * days);
+      }
+
+      // Adicionar centavo residual na primeira parcela para fechar a soma com perfeição
+      const instAmount = i === 0 ? Number((baseAmount + remainder).toFixed(2)) : baseAmount;
+
+      generated.push({
+        number: i + 1,
+        due_date: d.toISOString().split('T')[0],
+        amount: Math.max(0, instAmount),
+        notes: `Parcela ${i + 1}/${count}`,
+      });
+    }
+
+    setCustomInstallments(generated);
+  }, [paymentType, installmentsCount, firstDueDate, installmentInterval, grandTotal]);
+
+  // Atualizar parcela individual modificada pelo usuário
+  const handleUpdateInstallment = (index: number, field: 'due_date' | 'amount', value: any) => {
+    const updated = [...customInstallments];
+    if (field === 'due_date') {
+      updated[index].due_date = value;
+    } else {
+      updated[index].amount = parseFloat(value) || 0;
+    }
+    setCustomInstallments(updated);
+  };
+
+  // Finalizar Venda com gravação atômica em price_history, comissão, contas a receber e comprovante
   const handleFinishSale = () => {
     if (cartItems.length === 0 || !selectedCustomerId) return;
 
-    createSale({
+    // Se for parcelado ou a prazo, valida se a soma das parcelas fecha o total
+    if (paymentType !== 'A_VISTA' && customInstallments.length > 0) {
+      const sum = Number(customInstallments.reduce((acc, inst) => acc + inst.amount, 0).toFixed(2));
+      if (Math.abs(sum - grandTotal) > 0.05) {
+        alert(`A soma das parcelas (R$ ${sum.toFixed(2)}) deve ser exatamente igual ao total da venda (R$ ${grandTotal.toFixed(2)}). Ajuste os valores.`);
+        return;
+      }
+    }
+
+    const newSale = createSale({
       customer_id: selectedCustomerId,
       professional_id: selectedProfessionalId || undefined,
+      payment_method_name: paymentMethod,
+      payment_type: paymentType,
+      installments_plan: paymentType !== 'A_VISTA' ? customInstallments : undefined,
       items: cartItems,
       notes,
     });
 
     setIsSuccess(true);
-    setTimeout(() => {
-      router.push('/vendas');
-    }, 1500);
+    setCompletedSale(newSale);
   };
 
   return (
@@ -1182,24 +1261,153 @@ function NovaVendaForm() {
                 </div>
               )}
 
-              {/* Forma de Pagamento e Observações */}
-              <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+              {/* Forma de Pagamento e Condições de Parcelamento */}
+              <div className="mt-4 pt-4 border-t border-slate-100 space-y-3.5">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
                     Forma de Pagamento
                   </label>
                   <select
                     value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPaymentMethod(val);
+                      if (val === 'À Prazo') {
+                        setPaymentType('A_PRAZO');
+                      } else if (val === 'Parcelado') {
+                        setPaymentType('PARCELADO');
+                      } else {
+                        setPaymentType('A_VISTA');
+                      }
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   >
-                    <option value="PIX">PIX à Vista</option>
+                    <option value="PIX à Vista">PIX à Vista</option>
+                    <option value="Dinheiro">Dinheiro</option>
                     <option value="Cartão de Débito">Cartão de Débito</option>
                     <option value="Cartão de Crédito">Cartão de Crédito</option>
-                    <option value="Boleto 30 Dias">Boleto Bancário 30 Dias</option>
-                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="Boleto Bancário">Boleto Bancário</option>
+                    <option value="À Prazo">À Prazo (Conta a Receber)</option>
+                    <option value="Parcelado">Parcelado (Múltiplas Parcelas)</option>
                   </select>
                 </div>
+
+                {/* Seção Condições de Pagamento: À Prazo ou Parcelado */}
+                {paymentType !== 'A_VISTA' && (
+                  <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between pb-2 border-b border-blue-200/80">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Condições de Pagamento a Prazo</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        Gera Conta a Receber
+                      </span>
+                    </div>
+
+                    {paymentType === 'PARCELADO' && (
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                          Número de Parcelas
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {[1, 2, 3, 4, 5, 6, 10, 12].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setInstallmentsCount(num)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                installmentsCount === num
+                                  ? 'bg-blue-600 text-white shadow-2xs'
+                                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {num}x
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={36}
+                          value={installmentsCount}
+                          onChange={(e) => setInstallmentsCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          className="w-24 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800"
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                          Primeiro Vencimento
+                        </label>
+                        <input
+                          type="date"
+                          value={firstDueDate}
+                          onChange={(e) => setFirstDueDate(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-medium"
+                        />
+                      </div>
+
+                      {paymentType === 'PARCELADO' && (
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                            Intervalo
+                          </label>
+                          <select
+                            value={installmentInterval}
+                            onChange={(e) => setInstallmentInterval(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-medium"
+                          >
+                            <option value="7">A cada 7 dias</option>
+                            <option value="15">A cada 15 dias</option>
+                            <option value="30">A cada 30 dias</option>
+                            <option value="45">A cada 45 dias</option>
+                            <option value="60">A cada 60 dias</option>
+                            <option value="MENSAL">Mensal (mesmo dia)</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tabela de Parcelas Previstas */}
+                    <div className="pt-2 border-t border-blue-200/80 space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                      <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase px-1">
+                        <span>Parcela</span>
+                        <span>Vencimento</span>
+                        <span className="text-right">Valor</span>
+                      </div>
+                      {customInstallments.map((inst, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 text-xs">
+                          <span className="font-bold text-slate-700 w-10 text-[11px]">
+                            {inst.number}x
+                          </span>
+                          <input
+                            type="date"
+                            value={inst.due_date}
+                            onChange={(e) => handleUpdateInstallment(idx, 'due_date', e.target.value)}
+                            className="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-[11px] text-slate-800 font-medium"
+                          />
+                          <div className="flex items-center space-x-1 ml-auto">
+                            <span className="text-[10px] text-slate-400">R$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={inst.amount}
+                              onChange={(e) => handleUpdateInstallment(idx, 'amount', e.target.value)}
+                              className="w-20 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-right font-black text-xs text-blue-900"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-800">
+                      <strong>Aviso:</strong> Esta venda <strong>não entrará no caixa imediatamente</strong>. Será gerada uma conta a receber no Contas a Receber para o cliente selecionado.
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
@@ -1240,6 +1448,35 @@ function NovaVendaForm() {
                   <span>Comissão Total Calculada:</span>
                   <span className="text-emerald-600 font-bold">{formatCurrency(totalCommission)}</span>
                 </div>
+                {/* Resumo de Condições a Prazo / Parcelado */}
+                {paymentType !== 'A_VISTA' && customInstallments.length > 0 && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1.5 text-xs text-blue-900">
+                    <div className="flex items-center justify-between font-bold">
+                      <span>Forma de Pagamento:</span>
+                      <span className="text-blue-700">{paymentType === 'A_PRAZO' ? 'À Prazo (1x)' : `Parcelado (${customInstallments.length}x)`}</span>
+                    </div>
+                    {paymentType === 'PARCELADO' && (
+                      <div className="flex justify-between text-[11px] text-blue-800">
+                        <span>Parcelas:</span>
+                        <span className="font-semibold">{customInstallments.length}x de ~{formatCurrency(customInstallments[0]?.amount || 0)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[11px] text-blue-800">
+                      <span>1º Vencimento:</span>
+                      <span className="font-semibold">{customInstallments[0]?.due_date ? new Date(`${customInstallments[0].due_date}T12:00:00`).toLocaleDateString('pt-BR') : '-'}</span>
+                    </div>
+                    {customInstallments.length > 1 && (
+                      <div className="flex justify-between text-[11px] text-blue-800">
+                        <span>Último Vencimento:</span>
+                        <span className="font-semibold">{new Date(`${customInstallments[customInstallments.length - 1].due_date}T12:00:00`).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-blue-600 pt-1 border-t border-blue-100 font-medium">
+                      ℹ️ Será criada uma conta a receber no sistema para este cliente.
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
                   <span>Total Final da Venda:</span>
                   <span className="text-xl text-blue-700">{formatCurrency(grandTotal)}</span>
@@ -1262,6 +1499,18 @@ function NovaVendaForm() {
           </div>
         </div>
       </div>
+
+      {/* Modal Pós-Venda Automático com Pré-visualização do Comprovante */}
+      {completedSale && (
+        <SaleReceiptModal
+          sale={completedSale}
+          isInitialSuccess={true}
+          onClose={() => {
+            setCompletedSale(null);
+            router.push('/vendas');
+          }}
+        />
+      )}
     </div>
   );
 }

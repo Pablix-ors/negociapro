@@ -1,7 +1,22 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Customer, Product, Sale, PriceHistorySummary, PriceHistoryRecord, Professional, CommissionRecord } from '@/types/database';
+import {
+  Customer,
+  Product,
+  Sale,
+  PriceHistorySummary,
+  PriceHistoryRecord,
+  Professional,
+  CommissionRecord,
+  ReceiptSettings,
+  DEFAULT_RECEIPT_SETTINGS,
+  AccountReceivable,
+  PaymentReceiptRecord,
+  CashMovement,
+  CashRegisterSession,
+  ReceivableStatus,
+} from '@/types/database';
 import {
   DEMO_CUSTOMERS,
   DEMO_PRODUCTS,
@@ -29,6 +44,45 @@ interface DataContextType {
   professionals: Professional[];
   commissions: CommissionRecord[];
   notifications: AppNotification[];
+  receiptSettings: ReceiptSettings;
+  updateReceiptSettings: (settings: Partial<ReceiptSettings>) => void;
+  // Financeiro & Contas a Receber
+  receivables: AccountReceivable[];
+  paymentReceipts: PaymentReceiptRecord[];
+  cashSession: CashRegisterSession | null;
+  cashSessionsHistory: CashRegisterSession[];
+  cashMovements: CashMovement[];
+  receivePayment: (params: {
+    receivable_id: string;
+    amount: number;
+    payment_method: string;
+    payment_date?: string;
+    notes?: string;
+  }) => { success: boolean; message?: string };
+  renegotiateReceivable: (params: {
+    receivable_id: string;
+    new_installments: Array<{ due_date: string; amount: number }>;
+    reason: string;
+  }) => void;
+  cancelReceivable: (receivable_id: string, reason: string) => void;
+  // Gestão de Caixa
+  openCashRegister: (params: {
+    name?: string;
+    initial_balance: number;
+    notes?: string;
+  }) => CashRegisterSession;
+  addCashMovement: (params: {
+    type: 'ENTRADA' | 'SAÍDA';
+    category: 'SUPRIMENTO' | 'SANGRIA' | 'DESPESA' | 'AJUSTE_POSITIVO' | 'AJUSTE_NEGATIVO';
+    description: string;
+    amount: number;
+    payment_method: string;
+    notes?: string;
+  }) => CashMovement;
+  closeCashRegister: (params: {
+    counted_balance: number;
+    notes?: string;
+  }) => CashRegisterSession;
   unreadNotificationsCount: number;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
@@ -63,6 +117,13 @@ interface DataContextType {
       commission_amount?: number;
     }>;
     payment_method_id?: string;
+    payment_method_name?: string;
+    payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+    installments_plan?: Array<{
+      number: number;
+      due_date: string;
+      amount: number;
+    }>;
     notes?: string;
   }) => Sale;
   cancelSale: (id: string) => void;
@@ -120,6 +181,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
   const [priceHistoryMap, setPriceHistoryMap] = useState<Record<string, PriceHistorySummary>>({});
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>(DEFAULT_RECEIPT_SETTINGS);
+
+  // Estados Financeiros & Caixa
+  const [receivables, setReceivables] = useState<AccountReceivable[]>([]);
+  const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceiptRecord[]>([]);
+  const [cashSession, setCashSession] = useState<CashRegisterSession | null>(null);
+  const [cashSessionsHistory, setCashSessionsHistory] = useState<CashRegisterSession[]>([]);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
 
   // Chave prefixada para isolamento estrito entre empresas (Multi-Tenant)
   const tenantKey = company?.id ? `_tenant_${company.id}` : '';
@@ -324,7 +393,204 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setNotifications(isDemo ? DEMO_NOTIFICATIONS : []);
     }
+
+    try {
+      const savedReceipt = localStorage.getItem(`negociapro_receipt_settings${key}`);
+      if (savedReceipt) {
+        setReceiptSettings({ ...DEFAULT_RECEIPT_SETTINGS, ...JSON.parse(savedReceipt) });
+      } else {
+        setReceiptSettings(DEFAULT_RECEIPT_SETTINGS);
+      }
+    } catch {
+      setReceiptSettings(DEFAULT_RECEIPT_SETTINGS);
+    }
+
+    // 5. Contas a Receber
+    try {
+      const savedReceivables = localStorage.getItem(`negociapro_receivables${key}`);
+      if (savedReceivables) {
+        const parsed: AccountReceivable[] = JSON.parse(savedReceivables);
+        // Atualizar status de vencimento dinamicamente
+        const todayStr = new Date().toISOString().split('T')[0];
+        const refreshed = parsed.map((r) => {
+          if (r.status === 'PAID' || r.status === 'CANCELLED' || r.status === 'RENEGOTIATED') return r;
+          if (r.due_date < todayStr) {
+            return { ...r, status: r.paid_amount > 0 ? ('PARTIALLY_PAID' as const) : ('OVERDUE' as const) };
+          }
+          if (r.due_date === todayStr) {
+            return { ...r, status: r.paid_amount > 0 ? ('PARTIALLY_PAID' as const) : ('DUE_TODAY' as const) };
+          }
+          return { ...r, status: r.paid_amount > 0 ? ('PARTIALLY_PAID' as const) : ('OPEN' as const) };
+        });
+        setReceivables(refreshed);
+      } else {
+        if (isDemo) {
+          const today = new Date();
+          const dToday = today.toISOString().split('T')[0];
+          const dOverdue = new Date(today.getTime() - 5 * 86400000).toISOString().split('T')[0];
+          const dFuture1 = new Date(today.getTime() + 15 * 86400000).toISOString().split('T')[0];
+          const dFuture2 = new Date(today.getTime() + 45 * 86400000).toISOString().split('T')[0];
+
+          const demoRecs: AccountReceivable[] = [
+            {
+              id: 'rec-demo-01',
+              company_id: company?.id || 'demo-company',
+              sale_id: 'sale-01',
+              sale_number: 1042,
+              customer_id: 'cust-01',
+              customer_name: 'Supermercado Progresso Ltda',
+              customer_document: '12.345.678/0001-90',
+              installment_number: 1,
+              total_installments: 3,
+              due_date: dOverdue,
+              original_amount: 400,
+              discount_amount: 0,
+              interest_amount: 0,
+              paid_amount: 0,
+              balance: 400,
+              status: 'OVERDUE',
+              payment_method_predicted: 'Boleto',
+              created_at: new Date(Date.now() - 35 * 86400000).toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            {
+              id: 'rec-demo-02',
+              company_id: company?.id || 'demo-company',
+              sale_id: 'sale-01',
+              sale_number: 1042,
+              customer_id: 'cust-01',
+              customer_name: 'Supermercado Progresso Ltda',
+              customer_document: '12.345.678/0001-90',
+              installment_number: 2,
+              total_installments: 3,
+              due_date: dToday,
+              original_amount: 400,
+              discount_amount: 0,
+              interest_amount: 0,
+              paid_amount: 0,
+              balance: 400,
+              status: 'DUE_TODAY',
+              payment_method_predicted: 'Boleto',
+              created_at: new Date(Date.now() - 35 * 86400000).toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            {
+              id: 'rec-demo-03',
+              company_id: company?.id || 'demo-company',
+              sale_id: 'sale-01',
+              sale_number: 1042,
+              customer_id: 'cust-01',
+              customer_name: 'Supermercado Progresso Ltda',
+              customer_document: '12.345.678/0001-90',
+              installment_number: 3,
+              total_installments: 3,
+              due_date: dFuture1,
+              original_amount: 400,
+              discount_amount: 0,
+              interest_amount: 0,
+              paid_amount: 0,
+              balance: 400,
+              status: 'OPEN',
+              payment_method_predicted: 'Boleto',
+              created_at: new Date(Date.now() - 35 * 86400000).toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            {
+              id: 'rec-demo-04',
+              company_id: company?.id || 'demo-company',
+              sale_id: 'sale-02',
+              sale_number: 1043,
+              customer_id: 'cust-02',
+              customer_name: 'Drogaria Saúde & Bem-Estar',
+              customer_document: '98.765.432/0001-10',
+              installment_number: 1,
+              total_installments: 1,
+              due_date: dFuture2,
+              original_amount: 1500,
+              discount_amount: 0,
+              interest_amount: 0,
+              paid_amount: 500,
+              balance: 1000,
+              status: 'PARTIALLY_PAID',
+              payment_method_predicted: 'À Prazo',
+              created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ];
+          setReceivables(demoRecs);
+          safeSetItem(`negociapro_receivables${key}`, JSON.stringify(demoRecs));
+        } else {
+          setReceivables([]);
+        }
+      }
+    } catch {
+      setReceivables([]);
+    }
+
+    // 6. Recibos de Pagamento
+    try {
+      const savedReceipts = localStorage.getItem(`negociapro_payment_receipts${key}`);
+      setPaymentReceipts(savedReceipts ? JSON.parse(savedReceipts) : []);
+    } catch {
+      setPaymentReceipts([]);
+    }
+
+    // 7. Sessão Ativa de Caixa
+    try {
+      const savedCashSession = localStorage.getItem(`negociapro_cash_session${key}`);
+      if (savedCashSession) {
+        setCashSession(JSON.parse(savedCashSession));
+      } else {
+        // Se for demo e não tiver caixa, abrir caixa inicial demonstrativo
+        if (isDemo) {
+          const demoSession: CashRegisterSession = {
+            id: 'cash-demo-01',
+            company_id: company?.id || 'demo-company',
+            name: 'Caixa Principal',
+            opened_at: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+            opened_by_user_id: user?.id || 'demo-user',
+            opened_by_name: user?.name || 'Administrador',
+            initial_balance: 200,
+            total_inflows: 0,
+            total_outflows: 0,
+            expected_balance: 200,
+            status: 'OPEN',
+            notes: 'Abertura de caixa para demonstração',
+          };
+          setCashSession(demoSession);
+          safeSetItem(`negociapro_cash_session${key}`, JSON.stringify(demoSession));
+        } else {
+          setCashSession(null);
+        }
+      }
+    } catch {
+      setCashSession(null);
+    }
+
+    // 8. Histórico de Fechamentos de Caixa
+    try {
+      const savedCashHistory = localStorage.getItem(`negociapro_cash_history${key}`);
+      setCashSessionsHistory(savedCashHistory ? JSON.parse(savedCashHistory) : []);
+    } catch {
+      setCashSessionsHistory([]);
+    }
+
+    // 9. Movimentações de Caixa
+    try {
+      const savedMovements = localStorage.getItem(`negociapro_cash_movements${key}`);
+      setCashMovements(savedMovements ? JSON.parse(savedMovements) : []);
+    } catch {
+      setCashMovements([]);
+    }
   }, [tenantKey, company?.id]); // isDemoCompany já depende de company?.id via useMemo
+
+  const updateReceiptSettings = (partial: Partial<ReceiptSettings>) => {
+    setReceiptSettings((prev) => {
+      const updated = { ...prev, ...partial };
+      safeSetItem(`negociapro_receipt_settings${tenantKey}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const saveNotifications = (data: AppNotification[]) => {
     setNotifications(data);
@@ -380,6 +646,317 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveHistoryState = (map: Record<string, PriceHistorySummary>) => {
     setPriceHistoryMap(map);
     safeSetItem(`negociapro_history${tenantKey}`, JSON.stringify(map));
+  };
+
+  const saveReceivablesState = (data: AccountReceivable[]) => {
+    setReceivables(data);
+    safeSetItem(`negociapro_receivables${tenantKey}`, JSON.stringify(data));
+  };
+
+  const saveReceiptsState = (data: PaymentReceiptRecord[]) => {
+    setPaymentReceipts(data);
+    safeSetItem(`negociapro_payment_receipts${tenantKey}`, JSON.stringify(data));
+  };
+
+  const saveCashSessionState = (session: CashRegisterSession | null) => {
+    setCashSession(session);
+    if (session) {
+      safeSetItem(`negociapro_cash_session${tenantKey}`, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(`negociapro_cash_session${tenantKey}`);
+    }
+  };
+
+  const saveCashHistoryState = (history: CashRegisterSession[]) => {
+    setCashSessionsHistory(history);
+    safeSetItem(`negociapro_cash_history${tenantKey}`, JSON.stringify(history));
+  };
+
+  const saveMovementsState = (movements: CashMovement[]) => {
+    setCashMovements(movements);
+    safeSetItem(`negociapro_cash_movements${tenantKey}`, JSON.stringify(movements));
+  };
+
+  // --- MÉTODOS DE CAIXA ---
+  const openCashRegister = (params: {
+    name?: string;
+    initial_balance: number;
+    notes?: string;
+  }): CashRegisterSession => {
+    const nowIso = new Date().toISOString();
+    const newSession: CashRegisterSession = {
+      id: `cash-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      name: params.name || 'Caixa Principal',
+      opened_at: nowIso,
+      opened_by_user_id: user?.id || null,
+      opened_by_name: user?.name || 'Operador',
+      initial_balance: params.initial_balance,
+      total_inflows: 0,
+      total_outflows: 0,
+      expected_balance: params.initial_balance,
+      status: 'OPEN',
+      notes: params.notes,
+    };
+
+    saveCashSessionState(newSession);
+
+    // Movimentação de abertura (saldo inicial)
+    const initialMovement: CashMovement = {
+      id: `mov-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      cash_session_id: newSession.id,
+      timestamp: nowIso,
+      type: 'ENTRADA',
+      category: 'SALDO_INICIAL',
+      description: 'Abertura de Caixa (Saldo Inicial)',
+      origin: 'ABERTURA_CAIXA',
+      payment_method: 'Dinheiro',
+      amount: params.initial_balance,
+      current_balance_after: params.initial_balance,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      notes: params.notes,
+    };
+
+    saveMovementsState([initialMovement, ...cashMovements]);
+    return newSession;
+  };
+
+  const addCashMovement = (params: {
+    type: 'ENTRADA' | 'SAÍDA';
+    category: 'SUPRIMENTO' | 'SANGRIA' | 'DESPESA' | 'AJUSTE_POSITIVO' | 'AJUSTE_NEGATIVO';
+    description: string;
+    amount: number;
+    payment_method: string;
+    notes?: string;
+  }): CashMovement => {
+    const nowIso = new Date().toISOString();
+    const currentBal = cashSession?.expected_balance || 0;
+    const newBal = params.type === 'ENTRADA' ? currentBal + params.amount : currentBal - params.amount;
+
+    const newMov: CashMovement = {
+      id: `mov-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      cash_session_id: cashSession?.id || 'default-cash',
+      timestamp: nowIso,
+      type: params.type,
+      category: params.category,
+      description: params.description,
+      origin: 'MANUAL',
+      payment_method: params.payment_method,
+      amount: params.amount,
+      current_balance_after: Number(newBal.toFixed(2)),
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      notes: params.notes,
+    };
+
+    // Atualizar saldo esperado na sessão de caixa
+    if (cashSession) {
+      const updatedSession: CashRegisterSession = {
+        ...cashSession,
+        total_inflows: params.type === 'ENTRADA' ? cashSession.total_inflows + params.amount : cashSession.total_inflows,
+        total_outflows: params.type === 'SAÍDA' ? cashSession.total_outflows + params.amount : cashSession.total_outflows,
+        expected_balance: Number(newBal.toFixed(2)),
+      };
+      saveCashSessionState(updatedSession);
+    }
+
+    const updatedMovs = [newMov, ...cashMovements];
+    saveMovementsState(updatedMovs);
+    return newMov;
+  };
+
+  const closeCashRegister = (params: {
+    counted_balance: number;
+    notes?: string;
+  }): CashRegisterSession => {
+    if (!cashSession) throw new Error('Não há caixa aberto para fechamento');
+
+    const nowIso = new Date().toISOString();
+    const diff = Number((params.counted_balance - cashSession.expected_balance).toFixed(2));
+    let diffType: 'CORRECT' | 'SHORTAGE' | 'SURPLUS' = 'CORRECT';
+    if (diff < -0.009) diffType = 'SHORTAGE';
+    else if (diff > 0.009) diffType = 'SURPLUS';
+
+    const closedSession: CashRegisterSession = {
+      ...cashSession,
+      closed_at: nowIso,
+      closed_by_user_id: user?.id || null,
+      closed_by_name: user?.name || 'Operador',
+      counted_balance: params.counted_balance,
+      difference: diff,
+      difference_type: diffType,
+      status: 'CLOSED',
+      notes: params.notes || cashSession.notes,
+    };
+
+    // Adicionar histórico
+    saveCashHistoryState([closedSession, ...cashSessionsHistory]);
+    saveCashSessionState(null);
+
+    return closedSession;
+  };
+
+  // --- MÉTODOS DE CONTAS A RECEBER ---
+  const receivePayment = (params: {
+    receivable_id: string;
+    amount: number;
+    payment_method: string;
+    payment_date?: string;
+    notes?: string;
+  }): { success: boolean; message?: string } => {
+    const target = receivables.find((r) => r.id === params.receivable_id);
+    if (!target) return { success: false, message: 'Conta a receber não encontrada.' };
+    if (params.amount <= 0) return { success: false, message: 'Valor recebido deve ser maior que zero.' };
+
+    const nowIso = new Date().toISOString();
+    const payDate = params.payment_date || nowIso;
+    const newPaidAmount = Number((target.paid_amount + params.amount).toFixed(2));
+    const newBalance = Number((target.original_amount + target.interest_amount - target.discount_amount - newPaidAmount).toFixed(2));
+
+    const isFullyPaid = newBalance <= 0.009;
+    const newStatus: ReceivableStatus = isFullyPaid ? 'PAID' : 'PARTIALLY_PAID';
+
+    const updatedReceivables = receivables.map((r) => {
+      if (r.id === params.receivable_id) {
+        return {
+          ...r,
+          paid_amount: newPaidAmount,
+          balance: Math.max(0, newBalance),
+          status: newStatus,
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+
+    saveReceivablesState(updatedReceivables);
+
+    // Criar registro de recebimento
+    const receiptRecord: PaymentReceiptRecord = {
+      id: `rec-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      receivable_id: target.id,
+      sale_id: target.sale_id,
+      sale_number: target.sale_number,
+      customer_id: target.customer_id,
+      customer_name: target.customer_name,
+      payment_date: payDate,
+      amount_paid: params.amount,
+      payment_method: params.payment_method,
+      cash_session_id: cashSession?.id || null,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      notes: params.notes,
+      created_at: nowIso,
+    };
+
+    saveReceiptsState([receiptRecord, ...paymentReceipts]);
+
+    // Lançar movimentação no caixa se houver caixa aberto
+    if (cashSession) {
+      const currentBal = cashSession.expected_balance || 0;
+      const newBal = Number((currentBal + params.amount).toFixed(2));
+
+      const cashMov: CashMovement = {
+        id: `mov-${Date.now()}`,
+        company_id: company?.id || 'demo-company',
+        cash_session_id: cashSession.id,
+        timestamp: nowIso,
+        type: 'ENTRADA',
+        category: 'RECEBIMENTO_CONTA',
+        description: `Recebimento Parcela ${target.installment_number}/${target.total_installments} - Venda #${target.sale_number} (${target.customer_name})`,
+        origin: 'CONTA_A_RECEBER',
+        reference_id: target.id,
+        payment_method: params.payment_method,
+        amount: params.amount,
+        current_balance_after: newBal,
+        user_id: user?.id || null,
+        user_name: user?.name || 'Operador',
+        notes: params.notes,
+      };
+
+      saveMovementsState([cashMov, ...cashMovements]);
+
+      const updatedSession: CashRegisterSession = {
+        ...cashSession,
+        total_inflows: Number((cashSession.total_inflows + params.amount).toFixed(2)),
+        expected_balance: newBal,
+      };
+      saveCashSessionState(updatedSession);
+    }
+
+    return { success: true };
+  };
+
+  const renegotiateReceivable = (params: {
+    receivable_id: string;
+    new_installments: Array<{ due_date: string; amount: number }>;
+    reason: string;
+  }) => {
+    const target = receivables.find((r) => r.id === params.receivable_id);
+    if (!target) return;
+
+    const nowIso = new Date().toISOString();
+
+    // 1. Marcar conta original como RENEGOTIATED
+    const updatedList = receivables.map((r) => {
+      if (r.id === params.receivable_id) {
+        return {
+          ...r,
+          status: 'RENEGOTIATED' as const,
+          notes: `${r.notes ? r.notes + ' | ' : ''}Renegociada em ${nowIso.split('T')[0]}: ${params.reason}`,
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+
+    // 2. Criar novas parcelas resultantes da renegociação
+    const newItems: AccountReceivable[] = params.new_installments.map((inst, idx) => ({
+      id: `rec-reneg-${Date.now()}-${idx}`,
+      company_id: company?.id || 'demo-company',
+      sale_id: target.sale_id,
+      sale_number: target.sale_number,
+      customer_id: target.customer_id,
+      customer_name: target.customer_name,
+      customer_document: target.customer_document,
+      professional_id: target.professional_id,
+      professional_name: target.professional_name,
+      installment_number: idx + 1,
+      total_installments: params.new_installments.length,
+      due_date: inst.due_date,
+      original_amount: inst.amount,
+      discount_amount: 0,
+      interest_amount: 0,
+      paid_amount: 0,
+      balance: inst.amount,
+      status: 'OPEN' as const,
+      payment_method_predicted: target.payment_method_predicted,
+      notes: `Origem: Renegociação da parcela ${target.installment_number}/${target.total_installments}. Motivo: ${params.reason}`,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }));
+
+    saveReceivablesState([...newItems, ...updatedList]);
+  };
+
+  const cancelReceivable = (receivable_id: string, reason: string) => {
+    const nowIso = new Date().toISOString();
+    const updated = receivables.map((r) => {
+      if (r.id === receivable_id) {
+        return {
+          ...r,
+          status: 'CANCELLED' as const,
+          notes: `${r.notes ? r.notes + ' | ' : ''}Cancelada por ${user?.name || 'Usuário'} em ${nowIso.split('T')[0]}: ${reason}`,
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+    saveReceivablesState(updated);
   };
 
   const getPriceHistory = (customerId: string, productId: string): PriceHistorySummary => {
@@ -679,6 +1256,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       commission_amount?: number;
     }>;
     payment_method_id?: string;
+    payment_method_name?: string;
+    payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+    installments_plan?: Array<{
+      number: number;
+      due_date: string;
+      amount: number;
+      notes?: string;
+    }>;
     notes?: string;
   }): Sale => {
     const subtotal = saleData.items.reduce((acc, item) => acc + item.quantity * item.unit_price, 0);
@@ -739,6 +1324,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       discount,
       total,
       commission_total: Number(totalSaleCommission.toFixed(2)),
+      payment_method_id: saleData.payment_method_id || null,
+      payment_method_name: saleData.payment_method_name || null,
+      payment_type: saleData.payment_type || (saleData.payment_method_name === 'À Prazo' ? 'A_PRAZO' : saleData.payment_method_name === 'Parcelado' ? 'PARCELADO' : 'A_VISTA'),
+      installments_count: saleData.installments_plan?.length || 1,
+      installments_plan: saleData.installments_plan,
       notes: saleData.notes,
       sold_at: nowIso,
       created_at: nowIso,
@@ -870,6 +1460,73 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     saveHistoryState(newHistoryMap);
 
+    // 6. INTEGRAÇÃO FINANCEIRA: VENDAS À VISTA VS. A PRAZO / PARCELADAS
+    const pType = saleData.payment_type || (saleData.payment_method_name === 'À Prazo' ? 'A_PRAZO' : saleData.payment_method_name === 'Parcelado' ? 'PARCELADO' : 'A_VISTA');
+    const isCreditOrInstallment = pType === 'A_PRAZO' || pType === 'PARCELADO' || (saleData.installments_plan && saleData.installments_plan.length > 0);
+
+    if (isCreditOrInstallment && saleData.installments_plan && saleData.installments_plan.length > 0) {
+      // Venda a Prazo ou Parcelada: Gerar Contas a Receber (SEM entrada no caixa imediata)
+      const newReceivables: AccountReceivable[] = saleData.installments_plan.map((inst, idx) => ({
+        id: `rec-${Date.now()}-${idx}`,
+        company_id: company?.id || 'demo-company',
+        sale_id: saleId,
+        sale_number: saleNumber,
+        customer_id: saleData.customer_id,
+        customer_name: currentCustomer?.name || 'Cliente',
+        customer_document: currentCustomer?.document || null,
+        professional_id: selectedProf?.id || null,
+        professional_name: selectedProf?.name || null,
+        installment_number: inst.number,
+        total_installments: saleData.installments_plan!.length,
+        due_date: inst.due_date,
+        original_amount: inst.amount,
+        discount_amount: 0,
+        interest_amount: 0,
+        paid_amount: 0,
+        balance: inst.amount,
+        status: 'OPEN' as const,
+        payment_method_predicted: saleData.payment_method_name || 'A Prazo',
+        notes: saleData.notes,
+        created_at: nowIso,
+        updated_at: nowIso,
+      }));
+
+      saveReceivablesState([...newReceivables, ...receivables]);
+    } else {
+      // Venda à Vista: Gerar Entrada Automática no Caixa se houver sessão aberta
+      if (cashSession) {
+        const currentBal = cashSession.expected_balance || 0;
+        const newBal = Number((currentBal + total).toFixed(2));
+
+        const cashMov: CashMovement = {
+          id: `mov-${Date.now()}`,
+          company_id: company?.id || 'demo-company',
+          cash_session_id: cashSession.id,
+          timestamp: nowIso,
+          type: 'ENTRADA',
+          category: 'VENDA_A_VISTA',
+          description: `Venda #${saleNumber} à vista (${saleData.payment_method_name || 'PIX'}) - ${currentCustomer?.name || 'Consumidor'}`,
+          origin: 'VENDA',
+          reference_id: saleId,
+          payment_method: saleData.payment_method_name || 'PIX',
+          amount: total,
+          current_balance_after: newBal,
+          user_id: user?.id || null,
+          user_name: user?.name || 'Operador',
+          notes: saleData.notes,
+        };
+
+        saveMovementsState([cashMov, ...cashMovements]);
+
+        const updatedSession: CashRegisterSession = {
+          ...cashSession,
+          total_inflows: Number((cashSession.total_inflows + total).toFixed(2)),
+          expected_balance: newBal,
+        };
+        saveCashSessionState(updatedSession);
+      }
+    }
+
     // 6. Sincronizar venda com Supabase se não for empresa de demonstração
     if (company?.id && !isDemoCompany) {
       fetch('/api/sales', {
@@ -970,6 +1627,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         professionals,
         commissions,
         notifications,
+        receiptSettings,
+        updateReceiptSettings,
+        // Financeiro & Contas a Receber
+        receivables,
+        paymentReceipts,
+        cashSession,
+        cashSessionsHistory,
+        cashMovements,
+        receivePayment,
+        renegotiateReceivable,
+        cancelReceivable,
+        openCashRegister,
+        addCashMovement,
+        closeCashRegister,
         unreadNotificationsCount,
         markNotificationAsRead,
         markAllNotificationsAsRead,
