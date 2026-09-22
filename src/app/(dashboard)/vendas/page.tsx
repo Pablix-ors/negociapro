@@ -1022,36 +1022,42 @@ export default function VendasPage() {
                 Itens e Snapshots de Negociação
               </span>
               <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 text-xs">
-                {selectedSale.items?.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-                  >
-                    <div>
-                      <span className="font-bold text-slate-900 block">
-                        {item.product?.name || 'Produto'}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {item.quantity} {item.product?.unit || 'UN'} × {formatCurrency(item.unit_price)}
-                        {item.discount > 0 && ` (Desconto: ${formatCurrency(item.discount)})`}
-                      </span>
-                    </div>
-                    <div className="sm:text-right">
-                      <span className="font-black text-slate-900 block">
-                        {formatCurrency(item.total)}
-                      </span>
-                      {item.commission_amount !== undefined && item.commission_amount > 0 && (
-                        <span className="text-[11px] text-emerald-700 font-semibold block">
-                          Comissão (
-                          {item.commission_type_snapshot === 'PERCENTAGE'
-                            ? `${item.commission_value_snapshot}%`
-                            : `${formatCurrency(item.commission_value_snapshot)}/un`}
-                          ): {formatCurrency(item.commission_amount)}
+                {selectedSale.items && selectedSale.items.length > 0 ? (
+                  selectedSale.items.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                    >
+                      <div>
+                        <span className="font-bold text-slate-900 block">
+                          {item.product?.name || 'Produto'}
                         </span>
-                      )}
+                        <span className="text-[11px] text-slate-500">
+                          {item.quantity} {item.product?.unit || 'UN'} × {formatCurrency(item.unit_price)}
+                          {item.discount > 0 && ` (Desconto: ${formatCurrency(item.discount)})`}
+                        </span>
+                      </div>
+                      <div className="sm:text-right">
+                        <span className="font-black text-slate-900 block">
+                          {formatCurrency(item.total)}
+                        </span>
+                        {item.commission_amount !== undefined && item.commission_amount > 0 && (
+                          <span className="text-[11px] text-emerald-700 font-semibold block">
+                            Comissão (
+                            {item.commission_type_snapshot === 'PERCENTAGE'
+                              ? `${item.commission_value_snapshot}%`
+                              : `${formatCurrency(item.commission_value_snapshot)}/un`}
+                            ): {formatCurrency(item.commission_amount)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-slate-400">
+                    Nenhum item discriminado registrado para esta venda.
                   </div>
-                ))}
+                )}
               </div>
             </div>
 

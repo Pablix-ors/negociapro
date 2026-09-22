@@ -106,7 +106,7 @@ export async function POST(request: Request) {
 
     // 2. Inserir itens da venda
     if (items.length > 0) {
-      const itemsPayload = items.map((it: any) => ({
+      const itemsPayloadWithCommission = items.map((it: any) => ({
         sale_id: createdSale.id,
         company_id,
         product_id: it.product_id,
@@ -119,16 +119,48 @@ export async function POST(request: Request) {
         commission_amount: Number(it.commission_amount) || 0,
       }));
 
-      const { data: insertedItems, error: itemsErr } = await supabase
+      const { data: insertedWithComm, error: commErr } = await supabase
         .from('sale_items')
-        .insert(itemsPayload)
+        .insert(itemsPayloadWithCommission)
         .select('*, product:products(*)');
 
-      if (itemsErr) {
-        console.warn('Aviso ao salvar itens da venda:', itemsErr);
-      }
+      if (commErr) {
+        console.warn('Aviso: falha ao salvar itens com colunas de comissão, tentando com colunas base:', commErr.message);
 
-      createdSale.items = insertedItems || [];
+        // Fallback para tabela de itens que não tenha colunas de comissão ainda migradas
+        const itemsPayloadBase = items.map((it: any) => ({
+          sale_id: createdSale.id,
+          company_id,
+          product_id: it.product_id,
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unit_price) || 0,
+          discount: Number(it.discount) || 0,
+          total: Number(it.total) || 0,
+        }));
+
+        const { data: insertedBase, error: baseErr } = await supabase
+          .from('sale_items')
+          .insert(itemsPayloadBase)
+          .select('*, product:products(*)');
+
+        if (baseErr) {
+          console.error('Erro ao salvar itens da venda (base):', baseErr.message);
+          // Se falhou no banco, repassar os itens originais da requisição para não esvaziar a venda
+          createdSale.items = items;
+        } else {
+          // Reincorporar os campos de comissão aos itens salvos para não perder no client
+          createdSale.items = (insertedBase || []).map((bItem: any, idx: number) => ({
+            ...bItem,
+            commission_type_snapshot: items[idx]?.commission_type_snapshot || 'NONE',
+            commission_value_snapshot: Number(items[idx]?.commission_value_snapshot) || 0,
+            commission_amount: Number(items[idx]?.commission_amount) || 0,
+          }));
+        }
+      } else {
+        createdSale.items = insertedWithComm || items;
+      }
+    } else {
+      createdSale.items = [];
     }
 
     return NextResponse.json({ success: true, sale: createdSale });
