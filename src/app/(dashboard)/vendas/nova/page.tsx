@@ -1457,37 +1457,6 @@ function NovaVendaForm() {
               </div>
             )}
 
-            {/* Rodapé expansível: Histórico de compras do cliente */}
-            {selectedCustomerId && currentProduct && (
-              <div className="border-t border-slate-100 bg-slate-50/50">
-                <button
-                  type="button"
-                  onClick={() => setShowCustomerHistory(!showCustomerHistory)}
-                  className="w-full px-4 py-3 text-left flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-100/60 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center space-x-2">
-                    <History className="w-4 h-4 text-slate-500" />
-                    <span>Histórico de compras do cliente</span>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showCustomerHistory ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showCustomerHistory && (
-                  <div className="p-4 pt-1 border-t border-slate-100 bg-white animate-in fade-in">
-                    <CustomerProductPriceHistory
-                      customerId={selectedCustomerId}
-                      productId={selectedProductId}
-                      currentProduct={currentProduct}
-                      proposedPrice={unitPrice}
-                      onApplyPrice={(price) => {
-                        setUnitPrice(price);
-                        setDiscount(0);
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
