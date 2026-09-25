@@ -8,6 +8,7 @@ import { useMaster } from '@/context/MasterAuthContext';
 import { useData } from '@/context/DataContext';
 import { formatCurrency } from '@/lib/formatters';
 import InstallPWAButton from '@/components/pwa/InstallPWAButton';
+import { useSidebar } from '@/context/SidebarContext';
 import {
   Search,
   Plus,
@@ -20,9 +21,13 @@ import {
   ShoppingCart,
   Command,
   ShieldCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Menu,
 } from 'lucide-react';
 
 export default function Topbar() {
+  const { isCollapsed, toggleSidebar } = useSidebar();
   const router = useRouter();
   const { user, company, logout } = useAuth();
   const { impersonatedCompany, masterUser } = useMaster();
@@ -98,42 +103,55 @@ export default function Topbar() {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-4 lg:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs gap-2 sm:gap-3">
-        {/* Busca Global (Trigger) */}
+      <header className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs gap-3">
+        {/* Toggle Menu Lateral & Busca Global (Trigger) */}
         <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0 max-w-xs sm:max-w-md lg:max-w-lg">
           <button
             type="button"
+            onClick={toggleSidebar}
+            title={isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer shrink-0 border border-slate-200/80 shadow-2xs hidden lg:flex items-center justify-center"
+          >
+            {isCollapsed ? (
+              <PanelLeftOpen className="w-4 h-4 text-blue-600" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4 text-slate-600" />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setSearchOpen(true)}
-            className="flex-1 flex items-center justify-between px-2.5 sm:px-3.5 py-2 bg-slate-100/80 hover:bg-slate-200/60 text-slate-500 rounded-xl text-xs border border-slate-200 transition-all cursor-pointer group min-w-0"
+            className="flex-1 flex items-center justify-between px-3.5 py-2 bg-slate-50 hover:bg-slate-100/80 text-slate-500 rounded-xl text-xs border border-slate-200/80 transition-all cursor-pointer group min-w-0"
           >
             <div className="flex items-center space-x-2 truncate min-w-0">
               <Search className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
               <span className="truncate hidden xs:inline sm:inline">Pesquisar clientes, produtos...</span>
               <span className="truncate inline xs:hidden sm:hidden">Buscar...</span>
             </div>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-white border border-slate-300 rounded text-slate-500 shadow-2xs shrink-0 ml-1">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-white border border-slate-200 rounded text-slate-400 shadow-2xs shrink-0 ml-1">
               <Command className="w-3 h-3 mr-0.5" /> K
             </kbd>
           </button>
-
-          {/* Identificação Visível da Empresa / Estabelecimento */}
-          <div className="hidden xl:flex items-center space-x-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 shrink-0">
-            <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="font-bold truncate max-w-[160px] 2xl:max-w-[220px]" title={company?.trade_name || company?.name || 'Estabelecimento'}>
-              {company?.trade_name || company?.name || 'Estabelecimento'}
-            </span>
-          </div>
         </div>
 
         {/* Ações Rápidas do Topo */}
-        <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+        <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+          {/* Identificação Visível da Empresa / Estabelecimento */}
+          <div className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700">
+            <span className="text-[11px] text-slate-400 font-medium">Empresa:</span>
+            <span className="font-bold text-slate-900 truncate max-w-[160px] 2xl:max-w-[220px]" title={company?.trade_name || company?.name || 'Estabelecimento'}>
+              {company?.trade_name || company?.name || 'Estabelecimento'}
+            </span>
+          </div>
+
           <div className="hidden sm:block">
             <InstallPWAButton variant="topbar" />
           </div>
 
           <Link
             href="/vendas/nova"
-            className="inline-flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 min-h-[38px]"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95 min-h-[36px]"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Nova Venda</span>
@@ -147,12 +165,12 @@ export default function Topbar() {
                 setNotifDropdownOpen(!notifDropdownOpen);
                 setProfileDropdownOpen(false);
               }}
-              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors relative"
+              className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors relative cursor-pointer"
               title="Notificações Comerciais"
             >
               <Bell className="w-4 h-4" />
               {unreadNotificationsCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-white animate-pulse" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-600 rounded-full ring-2 ring-white animate-pulse" />
               )}
             </button>
 

@@ -16,6 +16,7 @@ import {
   CashMovement,
   CashRegisterSession,
   ReceivableStatus,
+  SaleAuditLog,
 } from '@/types/database';
 import {
   DEMO_CUSTOMERS,
@@ -105,8 +106,9 @@ interface DataContextType {
   updateProfessional: (id: string, prof: Partial<Professional>) => void;
   deactivateProfessional: (id: string) => void;
   deleteProfessional: (id: string) => void;
+  saleAuditLogs: SaleAuditLog[];
   createSale: (saleData: {
-    customer_id: string;
+    customer_id?: string | null;
     professional_id?: string;
     items: Array<{
       product_id: string;
@@ -127,8 +129,58 @@ interface DataContextType {
       amount: number;
     }>;
     notes?: string;
+    status?: 'COMPLETED' | 'QUOTE';
+    converted_from_quote_id?: string | null;
   }) => Sale;
-  cancelSale: (id: string) => void;
+  convertQuoteToSale: (quoteId: string, options?: {
+    customer_id?: string | null;
+    professional_id?: string | null;
+    items?: Array<{
+      product_id: string;
+      quantity: number;
+      unit_price: number;
+      discount: number;
+      total: number;
+      commission_type_snapshot?: 'NONE' | 'PERCENTAGE' | 'FIXED';
+      commission_value_snapshot?: number;
+      commission_amount?: number;
+    }>;
+    payment_method_name?: string;
+    payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+    installments_plan?: Array<{
+      number: number;
+      due_date: string;
+      amount: number;
+    }>;
+    notes?: string;
+  }) => Sale | null;
+  updateFinishedSale: (params: {
+    sale_id: string;
+    saleData: {
+      customer_id?: string | null;
+      professional_id?: string | null;
+      payment_method_name?: string;
+      payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+      installments_plan?: Array<{
+        number: number;
+        due_date: string;
+        amount: number;
+      }>;
+      notes?: string;
+      items: Array<{
+        product_id: string;
+        quantity: number;
+        unit_price: number;
+        discount: number;
+        total: number;
+        commission_type_snapshot?: 'NONE' | 'PERCENTAGE' | 'FIXED';
+        commission_value_snapshot?: number;
+        commission_amount?: number;
+      }>;
+    };
+    reason?: string;
+  }) => { success: boolean; sale?: Sale; message?: string };
+  cancelSale: (id: string, reason?: string) => void;
   deleteSale: (idOrSaleNumber: string | number) => void;
   markCommissionAsPaid: (commissionId: string, paidAmount?: number, notes?: string) => void;
 }
@@ -192,6 +244,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [cashSession, setCashSession] = useState<CashRegisterSession | null>(null);
   const [cashSessionsHistory, setCashSessionsHistory] = useState<CashRegisterSession[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [saleAuditLogs, setSaleAuditLogs] = useState<SaleAuditLog[]>([]);
 
   // Chave prefixada para isolamento estrito entre empresas (Multi-Tenant)
   const tenantKey = company?.id ? `_tenant_${company.id}` : '';
@@ -351,6 +404,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((data) => {
           if (data && data.success && Array.isArray(data.sales)) {
             setSales((prev) => {
+              // 1. Mapear vendas do servidor e preservar itens locais se servidor vier vazio
+              const serverSalesMap = new Map(data.sales.map((ss: Sale) => [ss.id, ss]));
               const merged = data.sales.map((serverSale: Sale) => {
                 const existing = prev.find((p) => p.id === serverSale.id);
                 if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
@@ -358,8 +413,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 }
                 return serverSale;
               });
-              safeSetItem(`negociapro_sales${key}`, JSON.stringify(merged));
-              return merged;
+
+              // 2. Preservar vendas e orçamentos locais recentes que ainda não vieram do servidor
+              const localOnly = prev.filter((p) => !serverSalesMap.has(p.id) && (p.status === 'QUOTE' || String(p.id).startsWith('sale-')));
+              const fullMerged = [...localOnly, ...merged];
+
+              safeSetItem(`negociapro_sales${key}`, JSON.stringify(fullMerged));
+              return fullMerged;
             });
           }
         })
@@ -623,6 +683,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setCashMovements([]);
     }
+
+    // 10. Auditoria de Vendas
+    try {
+      const savedAudit = localStorage.getItem(`negociapro_sale_audit${key}`);
+      setSaleAuditLogs(savedAudit ? JSON.parse(savedAudit) : []);
+    } catch {
+      setSaleAuditLogs([]);
+    }
   }, [tenantKey, company?.id]); // isDemoCompany já depende de company?.id via useMemo
 
   const updateReceiptSettings = (partial: Partial<ReceiptSettings>) => {
@@ -692,6 +760,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (isMounted && data?.success && Array.isArray(data.sales)) {
             setSales((prev) => {
               // Fazer merge inteligente preservando os itens da venda se prev tiver itens e data.sales não
+              const serverSalesMap = new Map(data.sales.map((ss: Sale) => [ss.id, ss]));
               const mergedSales = data.sales.map((serverSale: Sale) => {
                 const existing = prev.find((p) => p.id === serverSale.id);
                 if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
@@ -700,8 +769,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 return serverSale;
               });
 
-              safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(mergedSales));
-              return mergedSales;
+              // Preservar vendas e orçamentos locais que ainda não sincronizaram com o servidor
+              const localOnly = prev.filter((p) => !serverSalesMap.has(p.id) && (p.status === 'QUOTE' || String(p.id).startsWith('sale-')));
+              const fullMerged = [...localOnly, ...mergedSales];
+
+              safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(fullMerged));
+              return fullMerged;
             });
           }
         })
@@ -786,6 +859,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     safeSetItem(`negociapro_payment_receipts${tenantKey}`, JSON.stringify(data));
   };
 
+  const saveAuditState = (data: SaleAuditLog[]) => {
+    setSaleAuditLogs(data);
+    safeSetItem(`negociapro_sale_audit${tenantKey}`, JSON.stringify(data));
+  };
+
   const saveCashSessionState = (session: CashRegisterSession | null) => {
     setCashSession(session);
     if (session) {
@@ -860,13 +938,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     notes?: string;
   }): CashMovement => {
     const nowIso = new Date().toISOString();
-    const currentBal = cashSession?.expected_balance || 0;
+    const currentBal = cashSession?.expected_balance ?? (
+      cashMovements.reduce((acc, m) => m.type === 'ENTRADA' ? acc + m.amount : acc - m.amount, 0)
+    );
     const newBal = params.type === 'ENTRADA' ? currentBal + params.amount : currentBal - params.amount;
 
     const newMov: CashMovement = {
       id: `mov-${Date.now()}`,
       company_id: company?.id || 'demo-company',
-      cash_session_id: cashSession?.id || 'default-cash',
+      cash_session_id: cashSession?.id || 'daily-cash',
       timestamp: nowIso,
       type: params.type,
       category: params.category,
@@ -983,31 +1063,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     saveReceiptsState([receiptRecord, ...paymentReceipts]);
 
-    // Lançar movimentação no caixa se houver caixa aberto
+    // Lançar movimentação no caixa diário
+    const prevBal = cashSession?.expected_balance ?? (
+      cashMovements.reduce((acc, m) => m.type === 'ENTRADA' ? acc + m.amount : acc - m.amount, 0)
+    );
+    const newBal = Number((prevBal + params.amount).toFixed(2));
+
+    const cashMov: CashMovement = {
+      id: `mov-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      cash_session_id: cashSession?.id || 'daily-cash',
+      timestamp: nowIso,
+      type: 'ENTRADA',
+      category: 'RECEBIMENTO_CONTA',
+      description: `Recebimento Parcela ${target.installment_number}/${target.total_installments} - Venda #${target.sale_number} (${target.customer_name})`,
+      origin: 'CONTA_A_RECEBER',
+      reference_id: target.id,
+      payment_method: params.payment_method,
+      amount: params.amount,
+      current_balance_after: newBal,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      notes: params.notes,
+    };
+
+    saveMovementsState([cashMov, ...cashMovements]);
+
     if (cashSession) {
-      const currentBal = cashSession.expected_balance || 0;
-      const newBal = Number((currentBal + params.amount).toFixed(2));
-
-      const cashMov: CashMovement = {
-        id: `mov-${Date.now()}`,
-        company_id: company?.id || 'demo-company',
-        cash_session_id: cashSession.id,
-        timestamp: nowIso,
-        type: 'ENTRADA',
-        category: 'RECEBIMENTO_CONTA',
-        description: `Recebimento Parcela ${target.installment_number}/${target.total_installments} - Venda #${target.sale_number} (${target.customer_name})`,
-        origin: 'CONTA_A_RECEBER',
-        reference_id: target.id,
-        payment_method: params.payment_method,
-        amount: params.amount,
-        current_balance_after: newBal,
-        user_id: user?.id || null,
-        user_name: user?.name || 'Operador',
-        notes: params.notes,
-      };
-
-      saveMovementsState([cashMov, ...cashMovements]);
-
       const updatedSession: CashRegisterSession = {
         ...cashSession,
         total_inflows: Number((cashSession.total_inflows + params.amount).toFixed(2)),
@@ -1442,9 +1524,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Finalização da Venda com Snapshot de Comissão e Vinculação de Profissional
+  // Finalização da Venda ou Registro de Orçamento com Snapshot de Comissão e Vinculação de Profissional
   const createSale = (saleData: {
-    customer_id: string;
+    customer_id?: string | null;
     professional_id?: string;
     items: Array<{
       product_id: string;
@@ -1466,7 +1548,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       notes?: string;
     }>;
     notes?: string;
+    status?: 'COMPLETED' | 'QUOTE';
+    converted_from_quote_id?: string | null;
   }): Sale => {
+    const isQuote = saleData.status === 'QUOTE';
     const subtotal = saleData.items.reduce((acc, item) => acc + item.quantity * item.unit_price, 0);
     const discount = saleData.items.reduce((acc, item) => acc + item.discount, 0);
     const total = subtotal - discount;
@@ -1504,7 +1589,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       };
     });
 
-    const currentCustomer = customers.find(c => c.id === saleData.customer_id);
+    const currentCustomer = saleData.customer_id ? customers.find(c => c.id === saleData.customer_id) : null;
     const selectedProf = professionals.find(p => p.id === saleData.professional_id);
     const saleNumber = 1000 + sales.length + 1;
     const saleId = `sale-${Date.now()}`;
@@ -1513,14 +1598,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const createdSale: Sale = {
       id: saleId,
       company_id: company?.id || 'demo-company',
-      customer_id: saleData.customer_id,
-      customer: currentCustomer,
+      customer_id: saleData.customer_id || null,
+      customer: currentCustomer || null,
       seller_id: user?.id || 'demo-user',
       seller: user || undefined,
       professional_id: saleData.professional_id || null,
       professional: selectedProf,
       sale_number: saleNumber,
-      status: 'COMPLETED',
+      status: isQuote ? 'QUOTE' : 'COMPLETED',
       subtotal,
       discount,
       total,
@@ -1530,6 +1615,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       payment_type: saleData.payment_type || (saleData.payment_method_name === 'À Prazo' ? 'A_PRAZO' : saleData.payment_method_name === 'Parcelado' ? 'PARCELADO' : 'A_VISTA'),
       installments_count: saleData.installments_plan?.length || 1,
       installments_plan: saleData.installments_plan,
+      converted_from_quote_id: saleData.converted_from_quote_id || null,
       notes: saleData.notes,
       sold_at: nowIso,
       created_at: nowIso,
@@ -1541,7 +1627,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const newSales = [createdSale, ...sales];
     saveSalesState(newSales);
 
-    // 2. Criar registro de comissão se houver profissional e comissão > 0
+    // Auditoria de criação
+    const auditLog: SaleAuditLog = {
+      id: `audit-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      sale_id: saleId,
+      sale_number: saleNumber,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      action: isQuote ? 'CREATE' : (saleData.converted_from_quote_id ? 'CONVERT_QUOTE' : 'CREATE'),
+      description: isQuote
+        ? `Orçamento #${saleNumber} salvo por ${user?.name || 'Operador'} no valor de R$ ${total.toFixed(2)} (${saleData.items.length} itens)`
+        : `Venda #${saleNumber} concluída por ${user?.name || 'Operador'} (${currentCustomer?.name || 'Sem cliente'}) no valor de R$ ${total.toFixed(2)}`,
+      new_state: { total, items_count: saleData.items.length, status: createdSale.status },
+      created_at: nowIso,
+    };
+    saveAuditState([auditLog, ...saleAuditLogs]);
+
+    // SE FOR ORÇAMENTO, NÃO REALIZAR MOVIMENTAÇÃO FINANCEIRA, ESTOQUE OU COMISSÃO
+    if (isQuote) {
+      // Sincronizar orçamento com Supabase se houver conexão ativa
+      if (company?.id && !isDemoCompany) {
+        fetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: company.id,
+            sale: createdSale,
+            items: enrichedItems,
+          }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data && data.success && data.sale) {
+              const serverSale = data.sale;
+              const finalMergedSale: Sale = {
+                ...createdSale,
+                ...serverSale,
+                items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (createdSale.items || enrichedItems),
+                customer: serverSale.customer || createdSale.customer,
+                professional: serverSale.professional || createdSale.professional,
+              };
+              setSales((prev) => prev.map((s) => (s.id === saleId ? finalMergedSale : s)));
+            }
+          })
+          .catch((err) => console.warn('Falha ao persistir orçamento no Supabase:', err));
+      }
+      return createdSale;
+    }
+
+    // 2. Criar registro de comissão se houver profissional e comissão > 0 (Apenas se finalizada)
     if (selectedProf && totalSaleCommission > 0) {
       const newCommission: CommissionRecord = {
         id: `comm-${Date.now()}`,
@@ -1579,21 +1714,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       saveProfsState(updatedProfs);
     }
 
-    // 3. Atualizar métricas do cliente
-    const updatedCustomers = customers.map(c => {
-      if (c.id === saleData.customer_id) {
-        return {
-          ...c,
-          total_purchased: (c.total_purchased || 0) + total,
-          orders_count: (c.orders_count || 0) + 1,
-          last_purchase_date: nowIso,
-        };
-      }
-      return c;
-    });
-    saveCust(updatedCustomers);
+    // 3. Atualizar métricas do cliente (se houver cliente)
+    if (saleData.customer_id) {
+      const updatedCustomers = customers.map(c => {
+        if (c.id === saleData.customer_id) {
+          return {
+            ...c,
+            total_purchased: (c.total_purchased || 0) + total,
+            orders_count: (c.orders_count || 0) + 1,
+            last_purchase_date: nowIso,
+          };
+        }
+        return c;
+      });
+      saveCust(updatedCustomers);
+    }
 
-    // 4. Atualizar estoque dos produtos
+    // 4. Atualizar estoque dos produtos definitivamente
     const updatedProducts = products.map(p => {
       const soldItem = saleData.items.find(i => i.product_id === p.id);
       if (soldItem) {
@@ -1606,60 +1743,62 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
     saveProd(updatedProducts);
 
-    // 5. REGISTRAR NO HISTÓRICO DE PREÇOS
-    const newHistoryMap = { ...priceHistoryMap };
+    // 5. REGISTRAR NO HISTÓRICO DE PREÇOS (se houver cliente cadastrado)
+    if (saleData.customer_id) {
+      const newHistoryMap = { ...priceHistoryMap };
 
-    saleData.items.forEach(item => {
-      const key = `${saleData.customer_id}_${item.product_id}`;
-      const effectiveUnitPrice = item.unit_price - item.discount / item.quantity;
+      saleData.items.forEach(item => {
+        const key = `${saleData.customer_id}_${item.product_id}`;
+        const effectiveUnitPrice = item.unit_price - item.discount / (item.quantity || 1);
 
-      const newRecord: PriceHistoryRecord = {
-        id: `hist-${Date.now()}-${item.product_id}`,
-        company_id: company?.id || 'demo-company',
-        customer_id: saleData.customer_id,
-        product_id: item.product_id,
-        sale_id: saleId,
-        seller_id: user?.id || 'demo-user',
-        seller_name: selectedProf ? selectedProf.name : user?.name || 'Vendedor',
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        discount: item.discount,
-        final_unit_price: effectiveUnitPrice,
-        total_price: item.total,
-        negotiation_date: nowIso,
-        notes: `Venda #${saleNumber}`,
-      };
+        const newRecord: PriceHistoryRecord = {
+          id: `hist-${Date.now()}-${item.product_id}`,
+          company_id: company?.id || 'demo-company',
+          customer_id: saleData.customer_id!,
+          product_id: item.product_id,
+          sale_id: saleId,
+          seller_id: user?.id || 'demo-user',
+          seller_name: selectedProf ? selectedProf.name : user?.name || 'Vendedor',
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          discount: item.discount,
+          final_unit_price: effectiveUnitPrice,
+          total_price: item.total,
+          negotiation_date: nowIso,
+          notes: `Venda #${saleNumber}`,
+        };
 
-      const existing = newHistoryMap[key] || {
-        last_price: null,
-        last_negotiation_date: null,
-        last_quantity: null,
-        last_seller_name: null,
-        min_price: null,
-        max_price: null,
-        avg_price: null,
-        history: [],
-      };
+        const existing = newHistoryMap[key] || {
+          last_price: null,
+          last_negotiation_date: null,
+          last_quantity: null,
+          last_seller_name: null,
+          min_price: null,
+          max_price: null,
+          avg_price: null,
+          history: [],
+        };
 
-      const updatedHistoryList = [newRecord, ...existing.history];
-      const prices = updatedHistoryList.map(h => h.final_unit_price);
-      const minP = Math.min(...prices);
-      const maxP = Math.max(...prices);
-      const avgP = prices.reduce((a, b) => a + b, 0) / prices.length;
+        const updatedHistoryList = [newRecord, ...existing.history];
+        const prices = updatedHistoryList.map(h => h.final_unit_price);
+        const minP = Math.min(...prices);
+        const maxP = Math.max(...prices);
+        const avgP = prices.reduce((a, b) => a + b, 0) / prices.length;
 
-      newHistoryMap[key] = {
-        last_price: effectiveUnitPrice,
-        last_negotiation_date: nowIso,
-        last_quantity: item.quantity,
-        last_seller_name: selectedProf ? selectedProf.name : user?.name || 'Vendedor',
-        min_price: minP,
-        max_price: maxP,
-        avg_price: Number(avgP.toFixed(2)),
-        history: updatedHistoryList,
-      };
-    });
+        newHistoryMap[key] = {
+          last_price: effectiveUnitPrice,
+          last_negotiation_date: nowIso,
+          last_quantity: item.quantity,
+          last_seller_name: selectedProf ? selectedProf.name : user?.name || 'Vendedor',
+          min_price: minP,
+          max_price: maxP,
+          avg_price: Number(avgP.toFixed(2)),
+          history: updatedHistoryList,
+        };
+      });
 
-    saveHistoryState(newHistoryMap);
+      saveHistoryState(newHistoryMap);
+    }
 
     // 6. INTEGRAÇÃO FINANCEIRA: VENDAS À VISTA VS. A PRAZO / PARCELADAS
     const pType = saleData.payment_type || (saleData.payment_method_name === 'À Prazo' ? 'A_PRAZO' : saleData.payment_method_name === 'Parcelado' ? 'PARCELADO' : 'A_VISTA');
@@ -1672,8 +1811,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         company_id: company?.id || 'demo-company',
         sale_id: saleId,
         sale_number: saleNumber,
-        customer_id: saleData.customer_id,
-        customer_name: currentCustomer?.name || 'Cliente',
+        customer_id: saleData.customer_id || 'sem-cliente',
+        customer_name: currentCustomer?.name || 'Venda sem Cliente',
         customer_document: currentCustomer?.document || null,
         professional_id: selectedProf?.id || null,
         professional_name: selectedProf?.name || null,
@@ -1694,31 +1833,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       saveReceivablesState([...newReceivables, ...receivables]);
     } else {
-      // Venda à Vista: Gerar Entrada Automática no Caixa se houver sessão aberta
+      // Venda à Vista: Gerar Entrada Automática no Caixa Diário
+      const prevBal = cashSession?.expected_balance ?? (
+        cashMovements.reduce((acc, m) => m.type === 'ENTRADA' ? acc + m.amount : acc - m.amount, 0)
+      );
+      const newBal = Number((prevBal + total).toFixed(2));
+
+      const cashMov: CashMovement = {
+        id: `mov-${Date.now()}`,
+        company_id: company?.id || 'demo-company',
+        cash_session_id: cashSession?.id || 'daily-cash',
+        timestamp: nowIso,
+        type: 'ENTRADA',
+        category: 'VENDA_A_VISTA',
+        description: `Venda #${saleNumber} à vista (${saleData.payment_method_name || 'Dinheiro'}) - ${currentCustomer?.name || 'Consumidor Final'}`,
+        origin: 'VENDA',
+        reference_id: saleId,
+        payment_method: saleData.payment_method_name || 'Dinheiro',
+        amount: total,
+        current_balance_after: newBal,
+        user_id: user?.id || null,
+        user_name: user?.name || 'Operador',
+        notes: saleData.notes,
+      };
+
+      saveMovementsState([cashMov, ...cashMovements]);
+
       if (cashSession) {
-        const currentBal = cashSession.expected_balance || 0;
-        const newBal = Number((currentBal + total).toFixed(2));
-
-        const cashMov: CashMovement = {
-          id: `mov-${Date.now()}`,
-          company_id: company?.id || 'demo-company',
-          cash_session_id: cashSession.id,
-          timestamp: nowIso,
-          type: 'ENTRADA',
-          category: 'VENDA_A_VISTA',
-          description: `Venda #${saleNumber} à vista (${saleData.payment_method_name || 'PIX'}) - ${currentCustomer?.name || 'Consumidor'}`,
-          origin: 'VENDA',
-          reference_id: saleId,
-          payment_method: saleData.payment_method_name || 'PIX',
-          amount: total,
-          current_balance_after: newBal,
-          user_id: user?.id || null,
-          user_name: user?.name || 'Operador',
-          notes: saleData.notes,
-        };
-
-        saveMovementsState([cashMov, ...cashMovements]);
-
         const updatedSession: CashRegisterSession = {
           ...cashSession,
           total_inflows: Number((cashSession.total_inflows + total).toFixed(2)),
@@ -1728,7 +1869,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // 6. Sincronizar venda com Supabase se não for empresa de demonstração
+    // 7. Sincronizar venda com Supabase se não for empresa de demonstração
     if (company?.id && !isDemoCompany) {
       fetch('/api/sales', {
         method: 'POST',
@@ -1742,7 +1883,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data && data.success && data.sale) {
-            // Mesclar garantindo que os itens enriquecidos (com produto, nome e cálculos) não se percam caso a resposta do servidor venha com itens incompletos
             const serverSale = data.sale;
             const finalMergedSale: Sale = {
               ...createdSale,
@@ -1760,10 +1900,457 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return createdSale;
   };
 
-  const cancelSale = (id: string) => {
+  // Conversão de Orçamento para Venda Concluída (Não duplica a venda, atualiza o status e dispara estoque/caixa)
+  const convertQuoteToSale = (quoteId: string, options?: {
+    customer_id?: string | null;
+    professional_id?: string | null;
+    items?: Array<{
+      product_id: string;
+      quantity: number;
+      unit_price: number;
+      discount: number;
+      total: number;
+      commission_type_snapshot?: 'NONE' | 'PERCENTAGE' | 'FIXED';
+      commission_value_snapshot?: number;
+      commission_amount?: number;
+    }>;
+    payment_method_name?: string;
+    payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+    installments_plan?: Array<{
+      number: number;
+      due_date: string;
+      amount: number;
+    }>;
+    notes?: string;
+  }): Sale | null => {
+    const targetQuote = sales.find((s) => s.id === quoteId);
+    if (!targetQuote || targetQuote.status !== 'QUOTE') {
+      return null;
+    }
+
+    const nowIso = new Date().toISOString();
+    const finalPaymentMethod = options?.payment_method_name || targetQuote.payment_method_name || 'Dinheiro';
+    const finalPaymentType = options?.payment_type || targetQuote.payment_type || 'A_VISTA';
+    const finalInstallments = options?.installments_plan || targetQuote.installments_plan;
+    const finalNotes = options?.notes || targetQuote.notes;
+
+    // Se novos itens foram repassados na conversão
+    const finalItems = options?.items && options.items.length > 0
+      ? options.items.map((it, idx) => {
+          const prod = products.find((p) => p.id === it.product_id);
+          return {
+            id: `si-${Date.now()}-${idx}`,
+            sale_id: targetQuote.id,
+            company_id: targetQuote.company_id,
+            product_id: it.product_id,
+            product: prod,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            discount: it.discount,
+            total: it.total,
+            commission_type_snapshot: it.commission_type_snapshot || prod?.commission_type || 'NONE',
+            commission_value_snapshot: it.commission_value_snapshot ?? prod?.commission_value ?? 0,
+            commission_amount: it.commission_amount || 0,
+          };
+        })
+      : targetQuote.items;
+
+    const finalSubtotal = finalItems ? finalItems.reduce((acc, it) => acc + it.quantity * it.unit_price, 0) : targetQuote.subtotal;
+    const finalDiscount = finalItems ? finalItems.reduce((acc, it) => acc + (it.discount || 0), 0) : targetQuote.discount;
+    const finalTotal = finalSubtotal - finalDiscount;
+    const finalCommission = finalItems ? finalItems.reduce((acc, it) => acc + (it.commission_amount || 0), 0) : targetQuote.commission_total;
+
+    const finalCustomer = options?.customer_id ? customers.find((c) => c.id === options.customer_id) : targetQuote.customer;
+    const finalProf = options?.professional_id ? professionals.find((p) => p.id === options.professional_id) : targetQuote.professional;
+
+    // Atualizar venda existente de QUOTE para COMPLETED
+    const convertedSale: Sale = {
+      ...targetQuote,
+      customer_id: options?.customer_id !== undefined ? options.customer_id : targetQuote.customer_id,
+      customer: finalCustomer,
+      professional_id: options?.professional_id !== undefined ? options.professional_id : targetQuote.professional_id,
+      professional: finalProf,
+      items: finalItems,
+      subtotal: finalSubtotal,
+      discount: finalDiscount,
+      total: finalTotal,
+      commission_total: finalCommission,
+      status: 'COMPLETED',
+      payment_method_name: finalPaymentMethod,
+      payment_type: finalPaymentType,
+      installments_plan: finalInstallments,
+      notes: finalNotes,
+      sold_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    const updatedSales = sales.map((s) => (s.id === quoteId ? convertedSale : s));
+    saveSalesState(updatedSales);
+
+    // Auditoria
+    const auditLog: SaleAuditLog = {
+      id: `audit-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      sale_id: targetQuote.id,
+      sale_number: targetQuote.sale_number,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      action: 'CONVERT_QUOTE',
+      description: `Orçamento #${targetQuote.sale_number} convertido em venda concluída por ${user?.name || 'Operador'}. Valor: R$ ${convertedSale.total.toFixed(2)}`,
+      previous_state: { status: 'QUOTE' },
+      new_state: { status: 'COMPLETED', payment_method: finalPaymentMethod },
+      created_at: nowIso,
+    };
+    saveAuditState([auditLog, ...saleAuditLogs]);
+
+    // Baixa de estoque dos itens
+    if (convertedSale.items && convertedSale.items.length > 0) {
+      const updatedProducts = products.map((p) => {
+        const item = convertedSale.items!.find((i) => i.product_id === p.id);
+        if (item) {
+          return {
+            ...p,
+            current_stock: Math.max(0, p.current_stock - item.quantity),
+          };
+        }
+        return p;
+      });
+      saveProd(updatedProducts);
+    }
+
+    // Comissão
+    if (convertedSale.professional_id && convertedSale.commission_total > 0) {
+      const newCommission: CommissionRecord = {
+        id: `comm-${Date.now()}`,
+        company_id: company?.id || 'demo-company',
+        professional_id: convertedSale.professional_id,
+        professional_name: convertedSale.professional?.name || 'Profissional',
+        sale_id: convertedSale.id,
+        sale_number: convertedSale.sale_number,
+        customer_id: convertedSale.customer_id,
+        customer_name: convertedSale.customer?.name,
+        sale_date: nowIso,
+        sale_total: convertedSale.total,
+        commission_amount: convertedSale.commission_total,
+        status: 'PENDENTE',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+      saveCommsState([newCommission, ...commissions]);
+    }
+
+    // Integração Financeira
+    const isCredit = finalPaymentType !== 'A_VISTA' && finalInstallments && finalInstallments.length > 0;
+    if (isCredit) {
+      const newReceivables: AccountReceivable[] = finalInstallments!.map((inst, idx) => ({
+        id: `rec-${Date.now()}-${idx}`,
+        company_id: company?.id || 'demo-company',
+        sale_id: convertedSale.id,
+        sale_number: convertedSale.sale_number,
+        customer_id: convertedSale.customer_id || 'sem-cliente',
+        customer_name: convertedSale.customer?.name || 'Venda sem Cliente',
+        customer_document: convertedSale.customer?.document || null,
+        professional_id: convertedSale.professional_id || null,
+        professional_name: convertedSale.professional?.name || null,
+        installment_number: inst.number,
+        total_installments: finalInstallments!.length,
+        due_date: inst.due_date,
+        original_amount: inst.amount,
+        discount_amount: 0,
+        interest_amount: 0,
+        paid_amount: 0,
+        balance: inst.amount,
+        status: 'OPEN' as const,
+        payment_method_predicted: finalPaymentMethod,
+        notes: finalNotes,
+        created_at: nowIso,
+        updated_at: nowIso,
+      }));
+      saveReceivablesState([...newReceivables, ...receivables]);
+    } else {
+      const prevBal = cashSession?.expected_balance ?? (
+        cashMovements.reduce((acc, m) => m.type === 'ENTRADA' ? acc + m.amount : acc - m.amount, 0)
+      );
+      const newBal = Number((prevBal + convertedSale.total).toFixed(2));
+
+      const cashMov: CashMovement = {
+        id: `mov-${Date.now()}`,
+        company_id: company?.id || 'demo-company',
+        cash_session_id: cashSession?.id || 'daily-cash',
+        timestamp: nowIso,
+        type: 'ENTRADA',
+        category: 'VENDA_A_VISTA',
+        description: `Venda #${convertedSale.sale_number} à vista (${finalPaymentMethod}) - ${convertedSale.customer?.name || 'Consumidor Final'}`,
+        origin: 'VENDA',
+        reference_id: convertedSale.id,
+        payment_method: finalPaymentMethod,
+        amount: convertedSale.total,
+        current_balance_after: newBal,
+        user_id: user?.id || null,
+        user_name: user?.name || 'Operador',
+        notes: finalNotes,
+      };
+      saveMovementsState([cashMov, ...cashMovements]);
+
+      if (cashSession) {
+        const updatedSession: CashRegisterSession = {
+          ...cashSession,
+          total_inflows: Number((cashSession.total_inflows + convertedSale.total).toFixed(2)),
+          expected_balance: newBal,
+        };
+        saveCashSessionState(updatedSession);
+      }
+    }
+
+    // Sincronizar atualização no Supabase
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/sales', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: company.id,
+          sale_id: convertedSale.id,
+          sale: convertedSale,
+          items: convertedSale.items,
+          requester_role: user?.role || 'ADMIN',
+          requester_name: user?.name || 'Operador',
+          requester_id: user?.id,
+        }),
+      }).catch((err) => console.warn('Falha ao converter orçamento no Supabase:', err));
+    }
+
+    return convertedSale;
+  };
+
+  // Edição de Venda Concluída (Com controle rigoroso de permissão: Dono/Admin/Gerente)
+  const updateFinishedSale = (params: {
+    sale_id: string;
+    saleData: {
+      customer_id?: string | null;
+      professional_id?: string | null;
+      payment_method_name?: string;
+      payment_type?: 'A_VISTA' | 'A_PRAZO' | 'PARCELADO';
+      installments_plan?: Array<{
+        number: number;
+        due_date: string;
+        amount: number;
+      }>;
+      notes?: string;
+      items: Array<{
+        product_id: string;
+        quantity: number;
+        unit_price: number;
+        discount: number;
+        total: number;
+        commission_type_snapshot?: 'NONE' | 'PERCENTAGE' | 'FIXED';
+        commission_value_snapshot?: number;
+        commission_amount?: number;
+      }>;
+    };
+    reason?: string;
+  }): { success: boolean; sale?: Sale; message?: string } => {
+    // 1. Validar permissão
+    const isAuthorized = user?.role === 'ADMIN' || user?.role === 'GERENTE';
+    if (!isAuthorized) {
+      return { success: false, message: 'Apenas Administradores ou Gerentes possuem permissão para editar vendas finalizadas.' };
+    }
+
+    const targetSale = sales.find((s) => s.id === params.sale_id);
+    if (!targetSale) {
+      return { success: false, message: 'Venda não encontrada.' };
+    }
+
+    const previousTotal = targetSale.total;
+    const previousItems = targetSale.items || [];
+    const nowIso = new Date().toISOString();
+
+    const subtotal = params.saleData.items.reduce((acc, item) => acc + item.quantity * item.unit_price, 0);
+    const discount = params.saleData.items.reduce((acc, item) => acc + item.discount, 0);
+    const total = subtotal - discount;
+
+    let totalCommission = 0;
+    const enrichedItems = params.saleData.items.map((item, idx) => {
+      const prod = products.find(p => p.id === item.product_id);
+      const cType = item.commission_type_snapshot || prod?.commission_type || 'NONE';
+      const cVal = item.commission_value_snapshot !== undefined ? item.commission_value_snapshot : (prod?.commission_value || 0);
+
+      let itemCommission = 0;
+      if (params.saleData.professional_id && cType !== 'NONE') {
+        if (cType === 'PERCENTAGE') {
+          itemCommission = Number(((item.total * cVal) / 100).toFixed(2));
+        } else if (cType === 'FIXED') {
+          itemCommission = Number((item.quantity * cVal).toFixed(2));
+        }
+      }
+      totalCommission += itemCommission;
+
+      return {
+        id: `si-${Date.now()}-${idx}`,
+        sale_id: params.sale_id,
+        company_id: company?.id || 'demo-company',
+        product_id: item.product_id,
+        product: prod,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount: item.discount,
+        total: item.total,
+        commission_type_snapshot: cType,
+        commission_value_snapshot: cVal,
+        commission_amount: itemCommission,
+      };
+    });
+
+    const currentCustomer = params.saleData.customer_id ? customers.find(c => c.id === params.saleData.customer_id) : null;
+    const selectedProf = professionals.find(p => p.id === params.saleData.professional_id);
+
+    const updatedSale: Sale = {
+      ...targetSale,
+      customer_id: params.saleData.customer_id || null,
+      customer: currentCustomer || null,
+      professional_id: params.saleData.professional_id || null,
+      professional: selectedProf,
+      subtotal,
+      discount,
+      total,
+      commission_total: Number(totalCommission.toFixed(2)),
+      payment_method_name: params.saleData.payment_method_name || targetSale.payment_method_name,
+      payment_type: params.saleData.payment_type || targetSale.payment_type,
+      installments_plan: params.saleData.installments_plan || targetSale.installments_plan,
+      notes: params.saleData.notes !== undefined ? params.saleData.notes : targetSale.notes,
+      updated_at: nowIso,
+      items: enrichedItems,
+    };
+
+    // 2. Atualizar array de vendas
+    const newSales = sales.map((s) => (s.id === params.sale_id ? updatedSale : s));
+    saveSalesState(newSales);
+
+    // 3. Ajustar Estoque: Estornar quantidades antigas e aplicar novas quantidades
+    if (targetSale.status === 'COMPLETED') {
+      const stockDiffs: Record<string, number> = {};
+      previousItems.forEach((oldIt) => {
+        stockDiffs[oldIt.product_id] = (stockDiffs[oldIt.product_id] || 0) + oldIt.quantity; // Devolve ao estoque
+      });
+      params.saleData.items.forEach((newIt) => {
+        stockDiffs[newIt.product_id] = (stockDiffs[newIt.product_id] || 0) - newIt.quantity; // Retira novo estoque
+      });
+
+      const updatedProducts = products.map((p) => {
+        if (stockDiffs[p.id] !== undefined) {
+          return {
+            ...p,
+            current_stock: Math.max(0, p.current_stock + stockDiffs[p.id]),
+          };
+        }
+        return p;
+      });
+      saveProd(updatedProducts);
+    }
+
+    // 4. Ajustar Caixa se for venda à vista concluída
+    const isCashSale = targetSale.status === 'COMPLETED' && updatedSale.payment_type === 'A_VISTA';
+    if (isCashSale && cashSession) {
+      const diffTotal = total - previousTotal;
+      if (Math.abs(diffTotal) > 0.009) {
+        const movType: 'ENTRADA' | 'SAÍDA' = diffTotal > 0 ? 'ENTRADA' : 'SAÍDA';
+        const absDiff = Math.abs(diffTotal);
+        const currentBal = cashSession.expected_balance || 0;
+        const newBal = diffTotal > 0 ? currentBal + absDiff : currentBal - absDiff;
+
+        const cashMov: CashMovement = {
+          id: `mov-${Date.now()}`,
+          company_id: company?.id || 'demo-company',
+          cash_session_id: cashSession.id,
+          timestamp: nowIso,
+          type: movType,
+          category: diffTotal > 0 ? 'AJUSTE_POSITIVO' : 'AJUSTE_NEGATIVO',
+          description: `Ajuste por Edição na Venda #${targetSale.sale_number} (${movType === 'ENTRADA' ? '+' : '-'}${absDiff.toFixed(2)})`,
+          origin: 'MANUAL',
+          reference_id: targetSale.id,
+          payment_method: updatedSale.payment_method_name || 'Dinheiro',
+          amount: absDiff,
+          current_balance_after: Number(newBal.toFixed(2)),
+          user_id: user?.id || null,
+          user_name: user?.name || 'Operador',
+          notes: params.reason || 'Edição de venda autorizada',
+        };
+
+        saveMovementsState([cashMov, ...cashMovements]);
+
+        const updatedSession: CashRegisterSession = {
+          ...cashSession,
+          total_inflows: diffTotal > 0 ? cashSession.total_inflows + absDiff : cashSession.total_inflows,
+          total_outflows: diffTotal < 0 ? cashSession.total_outflows + absDiff : cashSession.total_outflows,
+          expected_balance: Number(newBal.toFixed(2)),
+        };
+        saveCashSessionState(updatedSession);
+      }
+    }
+
+    // 5. Ajustar Comissões se houver alteração
+    const updatedComms = commissions.map((c) => {
+      if (c.sale_id === params.sale_id && c.status !== 'PAGA' && c.status !== 'CANCELADA') {
+        return {
+          ...c,
+          sale_total: total,
+          commission_amount: Number(totalCommission.toFixed(2)),
+          updated_at: nowIso,
+          notes: `${c.notes ? c.notes + ' | ' : ''}Venda reajustada em ${nowIso.split('T')[0]}`,
+        };
+      }
+      return c;
+    });
+    saveCommsState(updatedComms);
+
+    // 6. Auditoria Completa da Edição
+    const auditLog: SaleAuditLog = {
+      id: `audit-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      sale_id: targetSale.id,
+      sale_number: targetSale.sale_number,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Administrador',
+      action: 'EDIT',
+      description: `Venda #${targetSale.sale_number} editada por ${user?.name || 'Usuário'}. Total: R$ ${previousTotal.toFixed(2)} → R$ ${total.toFixed(2)}. ${params.reason ? 'Motivo: ' + params.reason : ''}`,
+      previous_state: { total: previousTotal, items: previousItems.length },
+      new_state: { total, items: enrichedItems.length, reason: params.reason },
+      created_at: nowIso,
+    };
+    saveAuditState([auditLog, ...saleAuditLogs]);
+
+    // 7. Sincronizar com Supabase
+    if (company?.id && !isDemoCompany) {
+      fetch('/api/sales', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: company.id,
+          sale_id: params.sale_id,
+          sale: updatedSale,
+          items: enrichedItems,
+          requester_role: user?.role || 'ADMIN',
+          requester_name: user?.name || 'Administrador',
+          requester_id: user?.id,
+        }),
+      }).catch((err) => console.warn('Falha ao sincronizar edição de venda no Supabase:', err));
+    }
+
+    return { success: true, sale: updatedSale };
+  };
+
+  const cancelSale = (id: string, reason?: string) => {
+    const target = sales.find((s) => s.id === id);
+    if (!target) return;
+
+    const nowIso = new Date().toISOString();
     const updated = sales.map(s => {
       if (s.id === id) {
-        return { ...s, status: 'CANCELLED' as const, updated_at: new Date().toISOString() };
+        return {
+          ...s,
+          status: 'CANCELLED' as const,
+          notes: `${s.notes ? s.notes + ' | ' : ''}Cancelada por ${user?.name || 'Usuário'}: ${reason || 'Sem motivo informado'}`,
+          updated_at: nowIso,
+        };
       }
       return s;
     });
@@ -1772,11 +2359,51 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // Cancelar comissão correspondente
     const updatedComms = commissions.map(c => {
       if (c.sale_id === id) {
-        return { ...c, status: 'CANCELADA' as const, updated_at: new Date().toISOString() };
+        return { ...c, status: 'CANCELADA' as const, updated_at: nowIso };
       }
       return c;
     });
     saveCommsState(updatedComms);
+
+    // Estorno de Estoque se a venda cancelada já estava COMPLETED
+    if (target.status === 'COMPLETED' && target.items && target.items.length > 0) {
+      const updatedProducts = products.map((p) => {
+        const it = target.items!.find((i) => i.product_id === p.id);
+        if (it) {
+          return {
+            ...p,
+            current_stock: p.current_stock + it.quantity,
+          };
+        }
+        return p;
+      });
+      saveProd(updatedProducts);
+    }
+
+    // Cancelar parcelas a receber vinculadas se houver
+    const updatedRecs = receivables.map((r) => {
+      if (r.sale_id === id) {
+        return { ...r, status: 'CANCELLED' as const, updated_at: nowIso };
+      }
+      return r;
+    });
+    saveReceivablesState(updatedRecs);
+
+    // Auditoria de cancelamento
+    const auditLog: SaleAuditLog = {
+      id: `audit-${Date.now()}`,
+      company_id: company?.id || 'demo-company',
+      sale_id: target.id,
+      sale_number: target.sale_number,
+      user_id: user?.id || null,
+      user_name: user?.name || 'Operador',
+      action: 'CANCEL',
+      description: `Venda #${target.sale_number} cancelada por ${user?.name || 'Operador'}. Motivo: ${reason || 'Não informado'}`,
+      previous_state: { status: target.status, total: target.total },
+      new_state: { status: 'CANCELLED', reason },
+      created_at: nowIso,
+    };
+    saveAuditState([auditLog, ...saleAuditLogs]);
 
     if (company?.id && !isDemoCompany) {
       fetch('/api/sales', {
@@ -1907,6 +2534,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         deactivateProfessional,
         deleteProfessional,
         createSale,
+        convertQuoteToSale,
+        updateFinishedSale,
+        saleAuditLogs,
         cancelSale,
         deleteSale,
         markCommissionAsPaid,

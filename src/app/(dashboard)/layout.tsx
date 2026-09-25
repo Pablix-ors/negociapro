@@ -121,6 +121,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   );
 }
 
+import { SidebarProvider } from '@/context/SidebarContext';
+
 export default function DashboardLayout({
   children,
 }: {
@@ -129,7 +131,9 @@ export default function DashboardLayout({
   return (
     <AuthProvider>
       <DataProvider>
-        <DashboardContent>{children}</DashboardContent>
+        <SidebarProvider>
+          <DashboardContent>{children}</DashboardContent>
+        </SidebarProvider>
       </DataProvider>
     </AuthProvider>
   );

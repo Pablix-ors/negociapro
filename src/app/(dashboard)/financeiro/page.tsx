@@ -135,6 +135,7 @@ function FinanceiroContent() {
   const [closeCashModalOpen, setCloseCashModalOpen] = useState(false);
   const [closeCashCounted, setCloseCashCounted] = useState<number>(0);
   const [closeCashNotes, setCloseCashNotes] = useState<string>('');
+  const [closeCashDate, setCloseCashDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   const [movementModalOpen, setMovementModalOpen] = useState(false);
   const [movType, setMovType] = useState<'ENTRADA' | 'SAÍDA'>('SAÍDA');
@@ -144,6 +145,13 @@ function FinanceiroContent() {
   const [movDescription, setMovDescription] = useState<string>('Sangria para depósito bancário');
   const [movNotes, setMovNotes] = useState<string>('');
 
+  // Filtros do Extrato de Caixa
+  const [cashPeriodFilter, setCashPeriodFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH'>('ALL');
+  const [cashTypeFilter, setCashTypeFilter] = useState<'ALL' | 'ENTRADA' | 'SAÍDA'>('ALL');
+  const [cashCategoryFilter, setCashCategoryFilter] = useState<string>('ALL');
+  const [cashPaymentMethodFilter, setCashPaymentMethodFilter] = useState<string>('ALL');
+  const [selectedHistoricalSession, setSelectedHistoricalSession] = useState<CashRegisterSession | null>(null);
+
   // Filtros de Comissões
   const [filterQuery, setFilterQuery] = useState('');
   const [selectedProfId, setSelectedProfId] = useState<string>('ALL');
@@ -151,6 +159,7 @@ function FinanceiroContent() {
 
   // Filtros de Vendas / Faturamento
   const [salesSearch, setSalesSearch] = useState('');
+  const [salesStatusFilter, setSalesStatusFilter] = useState<'ALL' | 'COMPLETED' | 'QUOTE' | 'CANCELLED'>('ALL');
 
   // Modal de Marcar Comissão como Paga
   const [payModalOpen, setPayModalOpen] = useState(false);
@@ -270,9 +279,22 @@ function FinanceiroContent() {
     });
   }, [commissions, filterQuery, selectedProfId, statusFilter]);
 
+  // Saldo Operacional em Caixa em tempo real (baseado nas movimentações diárias)
+  const currentCashBalance = useMemo(() => {
+    if (cashSession?.expected_balance !== undefined) {
+      return cashSession.expected_balance;
+    }
+    const inflows = cashMovements.filter((m) => m.type === 'ENTRADA').reduce((acc, m) => acc + m.amount, 0);
+    const outflows = cashMovements.filter((m) => m.type === 'SAÍDA').reduce((acc, m) => acc + m.amount, 0);
+    return Number((inflows - outflows).toFixed(2));
+  }, [cashSession, cashMovements]);
+
   // Filtro de Vendas / Faturamento
   const filteredSales = useMemo(() => {
-    return completedSales.filter((s) => {
+    return sales.filter((s) => {
+      if (salesStatusFilter !== 'ALL' && s.status !== salesStatusFilter) {
+        return false;
+      }
       const customerName = s.customer?.name || '';
       const profName = s.professional?.name || '';
       const term = salesSearch.toLowerCase();
@@ -282,7 +304,7 @@ function FinanceiroContent() {
         profName.toLowerCase().includes(term)
       );
     });
-  }, [completedSales, salesSearch]);
+  }, [sales, salesStatusFilter, salesSearch]);
 
   const openPayModal = (id: string, amount: number) => {
     setTargetCommissionId(id);
@@ -458,14 +480,10 @@ function FinanceiroContent() {
             </div>
           </div>
           <p className="text-lg font-black text-indigo-700 mt-1">
-            {formatCurrency(cashSession?.expected_balance || 0)}
+            {formatCurrency(currentCashBalance)}
           </p>
-          <span className="text-[10px] font-semibold mt-0.5 block">
-            {cashSession ? (
-              <span className="text-emerald-600">● Caixa Aberto</span>
-            ) : (
-              <span className="text-slate-400">Caixa Fechado</span>
-            )}
+          <span className="text-[10px] font-semibold mt-0.5 block text-slate-500">
+            {cashMovements.length} movimentações registradas
           </span>
         </div>
 
@@ -532,15 +550,9 @@ function FinanceiroContent() {
         >
           <Wallet className="w-4 h-4" />
           <span>Gestão de Caixa</span>
-          {cashSession ? (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
-              Aberto
-            </span>
-          ) : (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
-              Fechado
-            </span>
-          )}
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+            Diário
+          </span>
         </button>
 
         <button
@@ -1383,199 +1395,262 @@ function FinanceiroContent() {
         const expectedBal = cashSession?.expected_balance || 0;
         const diffClose = Number((closeCashCounted - expectedBal).toFixed(2));
 
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todayMovements = cashMovements.filter((m) => m.timestamp.split('T')[0] === todayStr);
+        const todayInflows = todayMovements.filter((m) => m.type === 'ENTRADA').reduce((acc, m) => acc + m.amount, 0);
+        const todayOutflows = todayMovements.filter((m) => m.type === 'SAÍDA').reduce((acc, m) => acc + m.amount, 0);
+
         return (
           <div className="space-y-6 animate-in fade-in">
-            {/* Status do Caixa Atual */}
+            {/* Painel do Caixa Operacional Diário */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-slate-100">
                 <div className="flex items-center space-x-3">
-                  <div className={`p-3 rounded-2xl ${
-                    cashSession ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                  }`}>
+                  <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-700">
                     <Wallet className="w-6 h-6" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="text-xl font-black text-slate-900">
-                        {cashSession ? 'Caixa Aberto' : 'Caixa Fechado'}
-                      </h2>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        cashSession ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {cashSession ? 'Em Operação' : 'Encerrado'}
+                      <h2 className="text-xl font-black text-slate-900">Caixa Operacional Diário</h2>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800">
+                        Ativo & Contínuo
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {cashSession
-                        ? `Aberto por ${cashSession.opened_by_name || 'Operador'} em ${new Date(cashSession.opened_at).toLocaleString('pt-BR')}`
-                        : 'Abra o caixa para iniciar as movimentações físicas de vendas à vista e suprimentos.'}
+                      Movimentação diária automática integrada com vendas à vista, recebimentos de crediário, suprimentos e retiradas
                     </p>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {!cashSession ? (
-                    <button
-                      type="button"
-                      onClick={() => setOpenCashModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95"
-                    >
-                      <Unlock className="w-4 h-4" />
-                      <span>Abrir Caixa</span>
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMovType('ENTRADA');
-                          setMovCategory('SUPRIMENTO');
-                          setMovDescription('Suprimento de Caixa (Troco Inicial)');
-                          setMovementModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Suprimento</span>
-                      </button>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMovType('ENTRADA');
+                      setMovCategory('SUPRIMENTO');
+                      setMovDescription('Suprimento de Caixa (Troco Inicial / Reforço)');
+                      setMovAmount(100);
+                      setMovementModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer transition-all"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Suprimento</span>
+                  </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMovType('SAÍDA');
-                          setMovCategory('SANGRIA');
-                          setMovDescription('Sangria de Caixa (Retirada para Cofre/Banco)');
-                          setMovementModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-xl text-xs font-bold border border-rose-200"
-                      >
-                        <Minus className="w-4 h-4" />
-                        <span>Sangria</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCloseCashCounted(expectedBal);
-                          setCloseCashModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md"
-                      >
-                        <Lock className="w-4 h-4" />
-                        <span>Fechar Caixa</span>
-                      </button>
-                    </>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMovType('SAÍDA');
+                      setMovCategory('SANGRIA');
+                      setMovDescription('Sangria de Caixa (Retirada para Cofre / Banco)');
+                      setMovAmount(100);
+                      setMovementModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/20 active:scale-95 cursor-pointer transition-all"
+                  >
+                    <Minus className="w-4 h-4" />
+                    <span>- Sangria</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Detalhes do Saldo e Movimentações da Sessão */}
-              {cashSession && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Saldo Inicial</span>
-                    <p className="text-lg font-black text-slate-900 mt-1">{formatCurrency(cashSession.initial_balance)}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">Total de Entradas</span>
-                    <p className="text-lg font-black text-emerald-600 mt-1">+{formatCurrency(cashSession.total_inflows)}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 block">Total de Saídas</span>
-                    <p className="text-lg font-black text-rose-600 mt-1">-{formatCurrency(cashSession.total_outflows)}</p>
-                  </div>
-                  <div className="p-4 bg-blue-50/70 rounded-2xl border border-blue-200">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-900 block">Saldo Esperado em Caixa</span>
-                    <p className="text-xl font-black text-blue-700 mt-1">{formatCurrency(cashSession.expected_balance)}</p>
-                  </div>
+              {/* Detalhes do Saldo e Movimentações */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Movimentações Hoje</span>
+                  <p className="text-lg font-black text-slate-900 mt-1">{todayMovements.length} lançamentos</p>
                 </div>
-              )}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">Entradas de Hoje</span>
+                  <p className="text-lg font-black text-emerald-600 mt-1">+{formatCurrency(todayInflows)}</p>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 block">Saídas / Sangrias Hoje</span>
+                  <p className="text-lg font-black text-rose-600 mt-1">-{formatCurrency(todayOutflows)}</p>
+                </div>
+                <div className="p-4 bg-blue-50/70 rounded-2xl border border-blue-200">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-900 block">Saldo Atual em Caixa</span>
+                  <p className="text-xl font-black text-blue-700 mt-1">{formatCurrency(currentCashBalance)}</p>
+                </div>
+              </div>
             </div>
 
-            {/* Tabela de Movimentações da Sessão */}
+            {/* Tabela de Movimentações da Sessão com Filtros Completos */}
             <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-black text-slate-900">Extrato de Movimentações do Caixa</h3>
-                  <p className="text-xs text-slate-400">Entradas à vista, recebimentos de parcelas, sangrias e suprimentos</p>
+                  <p className="text-xs text-slate-400">Entradas à vista, recebimentos de contas, suprimentos e sangrias</p>
                 </div>
-                <span className="text-xs font-bold text-slate-500">{cashMovements.length} lançamentos</span>
+                {/* Filtros de Caixa */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center rounded-xl bg-slate-100 p-0.5 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setCashPeriodFilter('ALL')}
+                      className={`px-2.5 py-1 rounded-lg transition-all ${cashPeriodFilter === 'ALL' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCashPeriodFilter('TODAY')}
+                      className={`px-2.5 py-1 rounded-lg transition-all ${cashPeriodFilter === 'TODAY' ? 'bg-white text-blue-700 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      Hoje
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCashPeriodFilter('YESTERDAY')}
+                      className={`px-2.5 py-1 rounded-lg transition-all ${cashPeriodFilter === 'YESTERDAY' ? 'bg-white text-blue-700 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      Ontem
+                    </button>
+                  </div>
+
+                  <select
+                    value={cashTypeFilter}
+                    onChange={(e) => setCashTypeFilter(e.target.value as any)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 font-semibold focus:outline-hidden"
+                  >
+                    <option value="ALL">Tipos (Todos)</option>
+                    <option value="ENTRADA">Entradas</option>
+                    <option value="SAÍDA">Saídas</option>
+                  </select>
+
+                  <select
+                    value={cashCategoryFilter}
+                    onChange={(e) => setCashCategoryFilter(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 font-semibold focus:outline-hidden"
+                  >
+                    <option value="ALL">Categorias (Todas)</option>
+                    <option value="VENDA_A_VISTA">Vendas à Vista</option>
+                    <option value="RECEBIMENTO_CONTA">Recebimentos</option>
+                    <option value="SUPRIMENTO">Suprimentos</option>
+                    <option value="SANGRIA">Sangrias</option>
+                    <option value="DESPESA">Despesas</option>
+                  </select>
+
+                  <select
+                    value={cashPaymentMethodFilter}
+                    onChange={(e) => setCashPaymentMethodFilter(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 font-semibold focus:outline-hidden"
+                  >
+                    <option value="ALL">Forma (Todas)</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="PIX">PIX</option>
+                    <option value="Cartão de Débito">Cartão de Débito</option>
+                    <option value="Cartão de Crédito">Cartão de Crédito</option>
+                  </select>
+                </div>
               </div>
 
-              {cashMovements.length === 0 ? (
-                <div className="p-10 text-center text-xs text-slate-400">
-                  Nenhuma movimentação financeira registrada neste caixa até o momento.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                      <tr>
-                        <th className="p-3.5">Data / Hora</th>
-                        <th className="p-3.5 text-center">Tipo</th>
-                        <th className="p-3.5">Descrição</th>
-                        <th className="p-3.5">Forma</th>
-                        <th className="p-3.5">Responsável</th>
-                        <th className="p-3.5 text-right">Valor</th>
-                        <th className="p-3.5 text-right">Saldo do Caixa</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {cashMovements.map((mov) => (
-                        <tr key={mov.id} className="hover:bg-slate-50">
-                          <td className="p-3.5 text-slate-600 whitespace-nowrap">
-                            {new Date(mov.timestamp).toLocaleString('pt-BR')}
-                          </td>
-                          <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              mov.type === 'ENTRADA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                            }`}>
-                              {mov.type}
-                            </span>
-                          </td>
-                          <td className="p-3.5 font-medium text-slate-800">
-                            <span>{mov.description}</span>
-                            {mov.notes && <span className="block text-[10px] text-slate-400 mt-0.5">{mov.notes}</span>}
-                          </td>
-                          <td className="p-3.5 text-slate-600 font-semibold">{mov.payment_method}</td>
-                          <td className="p-3.5 text-slate-600">{mov.user_name || 'Operador'}</td>
-                          <td className={`p-3.5 text-right font-black ${mov.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {mov.type === 'ENTRADA' ? '+' : '-'}{formatCurrency(mov.amount)}
-                          </td>
-                          <td className="p-3.5 text-right font-black text-slate-900">{formatCurrency(mov.current_balance_after)}</td>
+              {(() => {
+                const now = new Date();
+                const todayStr = now.toISOString().split('T')[0];
+                const yesterdayStr = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+
+                const filteredMovements = cashMovements.filter((mov) => {
+                  const movDateStr = mov.timestamp.split('T')[0];
+                  if (cashPeriodFilter === 'TODAY' && movDateStr !== todayStr) return false;
+                  if (cashPeriodFilter === 'YESTERDAY' && movDateStr !== yesterdayStr) return false;
+                  if (cashTypeFilter !== 'ALL' && mov.type !== cashTypeFilter) return false;
+                  if (cashCategoryFilter !== 'ALL' && mov.category !== cashCategoryFilter) return false;
+                  if (cashPaymentMethodFilter !== 'ALL' && !mov.payment_method?.toLowerCase().includes(cashPaymentMethodFilter.toLowerCase())) return false;
+                  return true;
+                });
+
+                if (filteredMovements.length === 0) {
+                  return (
+                    <div className="p-10 text-center text-xs text-slate-400">
+                      Nenhuma movimentação financeira corresponde aos filtros selecionados.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="p-3.5">Horário / Data</th>
+                          <th className="p-3.5 text-center">Tipo</th>
+                          <th className="p-3.5">Descrição</th>
+                          <th className="p-3.5">Forma</th>
+                          <th className="p-3.5">Usuário Responsável</th>
+                          <th className="p-3.5 text-right">Valor</th>
+                          <th className="p-3.5 text-right">Saldo do Caixa</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredMovements.map((mov) => (
+                          <tr key={mov.id} className="hover:bg-slate-50">
+                            <td className="p-3.5 text-slate-600 whitespace-nowrap">
+                              {new Date(mov.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              <span className="block text-[10px] text-slate-400">{new Date(mov.timestamp).toLocaleDateString('pt-BR')}</span>
+                            </td>
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                mov.type === 'ENTRADA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}>
+                                {mov.type}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-medium text-slate-800">
+                              <span>{mov.description}</span>
+                              {mov.notes && <span className="block text-[10px] text-slate-400 mt-0.5">{mov.notes}</span>}
+                            </td>
+                            <td className="p-3.5 text-slate-600 font-semibold">{mov.payment_method}</td>
+                            <td className="p-3.5 text-slate-600">{mov.user_name || 'Operador'}</td>
+                            <td className={`p-3.5 text-right font-black ${mov.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {mov.type === 'ENTRADA' ? '+' : '-'}{formatCurrency(mov.amount)}
+                            </td>
+                            <td className="p-3.5 text-right font-black text-slate-900">{formatCurrency(mov.current_balance_after)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
 
-            {/* Histórico de Fechamentos Anteriores */}
+            {/* Histórico de Fechamentos Anteriores (Auditável) */}
             {cashSessionsHistory.length > 0 && (
               <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-                <div className="p-4 border-b border-slate-100">
-                  <h3 className="text-sm font-black text-slate-900">Histórico de Fechamentos de Caixa</h3>
-                  <p className="text-xs text-slate-400">Conferência física, saldo esperado vs contado e quebras/sobras</p>
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Histórico de Fechamentos de Caixa</h3>
+                    <p className="text-xs text-slate-400">Conferência física, saldo esperado vs contado, quebras/sobras e auditoria</p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500">{cashSessionsHistory.length} caixas fechados</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
                       <tr>
-                        <th className="p-3">Data Fechamento</th>
-                        <th className="p-3">Responsável</th>
+                        <th className="p-3">Data / Horário</th>
+                        <th className="p-3">Resp. Abertura</th>
+                        <th className="p-3">Resp. Fechamento</th>
                         <th className="p-3 text-right">Saldo Inicial</th>
                         <th className="p-3 text-right">Entradas</th>
                         <th className="p-3 text-right">Saídas</th>
-                        <th className="p-3 text-right">Saldo Esperado</th>
-                        <th className="p-3 text-right">Saldo Contado</th>
+                        <th className="p-3 text-right">Esperado</th>
+                        <th className="p-3 text-right">Contado</th>
                         <th className="p-3 text-center">Diferença</th>
+                        <th className="p-3 text-center">Status</th>
+                        <th className="p-3 text-center">Relatório</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {cashSessionsHistory.map((sess) => (
                         <tr key={sess.id} className="hover:bg-slate-50">
-                          <td className="p-3 text-slate-700">{sess.closed_at ? new Date(sess.closed_at).toLocaleString('pt-BR') : '-'}</td>
+                          <td className="p-3 text-slate-700 whitespace-nowrap">
+                            <span className="font-bold block">{sess.closed_at ? new Date(sess.closed_at).toLocaleDateString('pt-BR') : '-'}</span>
+                            <span className="text-[10px] text-slate-400">{sess.closed_at ? new Date(sess.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                          </td>
+                          <td className="p-3 text-slate-700">{sess.opened_by_name || 'Operador'}</td>
                           <td className="p-3 text-slate-700">{sess.closed_by_name || 'Operador'}</td>
                           <td className="p-3 text-right font-medium text-slate-600">{formatCurrency(sess.initial_balance)}</td>
                           <td className="p-3 text-right font-medium text-emerald-600">+{formatCurrency(sess.total_inflows)}</td>
@@ -1584,12 +1659,25 @@ function FinanceiroContent() {
                           <td className="p-3 text-right font-black text-slate-900">{sess.counted_balance !== undefined ? formatCurrency(sess.counted_balance) : '-'}</td>
                           <td className="p-3 text-center">
                             {!sess.difference || sess.difference === 0 ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Conferido</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Sem diferença</span>
                             ) : (sess.difference ?? 0) < 0 ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700">Quebra: {formatCurrency(sess.difference)}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700">Falta: {formatCurrency(Math.abs(sess.difference))}</span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700">Sobra: +{formatCurrency(sess.difference)}</span>
                             )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">FECHADO</span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedHistoricalSession(sess)}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-600" />
+                              <span>Ver</span>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1654,9 +1742,14 @@ function FinanceiroContent() {
             {closeCashModalOpen && (
               <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
-                  <div className="flex items-center space-x-2 text-slate-900">
-                    <Lock className="w-5 h-5 text-slate-700" />
-                    <h3 className="text-base font-black">Conferência e Fechamento de Caixa</h3>
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                    <div className="flex items-center space-x-2 text-slate-900">
+                      <Lock className="w-5 h-5 text-slate-700" />
+                      <h3 className="text-base font-black">Conferência e Fechamento de Caixa</h3>
+                    </div>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                      {new Date().toLocaleDateString('pt-BR')} (Hoje)
+                    </span>
                   </div>
 
                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1 text-xs">
@@ -1739,6 +1832,105 @@ function FinanceiroContent() {
                       </button>
                     </div>
                   </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Relatório Completo de Caixa Fechado (Histórico) */}
+            {selectedHistoricalSession && (
+              <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-xl rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4 max-h-[90vh] flex flex-col">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center space-x-2 text-slate-900">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <h3 className="text-base font-black">Relatório de Fechamento de Caixa</h3>
+                        <p className="text-xs text-slate-400">
+                          {selectedHistoricalSession.closed_at ? new Date(selectedHistoricalSession.closed_at).toLocaleDateString('pt-BR') : '-'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistoricalSession(null)}
+                      className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="overflow-y-auto space-y-4 pr-1">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 bg-slate-50 rounded-xl">
+                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Abertura</span>
+                        <span className="font-bold text-slate-800 block">
+                          {new Date(selectedHistoricalSession.opened_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span className="text-slate-500">Por: {selectedHistoricalSession.opened_by_name || 'Operador'}</span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl">
+                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Fechamento</span>
+                        <span className="font-bold text-slate-800 block">
+                          {selectedHistoricalSession.closed_at ? new Date(selectedHistoricalSession.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </span>
+                        <span className="text-slate-500">Por: {selectedHistoricalSession.closed_by_name || 'Operador'}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Saldo Inicial (Abertura):</span>
+                        <span className="font-bold">{formatCurrency(selectedHistoricalSession.initial_balance)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-600">
+                        <span>(+) Total de Entradas:</span>
+                        <span className="font-bold">+{formatCurrency(selectedHistoricalSession.total_inflows)}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-600">
+                        <span>(-) Total de Saídas (Sangrias):</span>
+                        <span className="font-bold">-{formatCurrency(selectedHistoricalSession.total_outflows)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-800 font-bold pt-2 border-t border-slate-200">
+                        <span>Saldo Esperado pelo Sistema:</span>
+                        <span>{formatCurrency(selectedHistoricalSession.expected_balance)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-900 font-black text-sm">
+                        <span>Valor Físico Contado:</span>
+                        <span>{selectedHistoricalSession.counted_balance !== undefined ? formatCurrency(selectedHistoricalSession.counted_balance) : '-'}</span>
+                      </div>
+                      <div className="flex justify-between font-black text-sm pt-2 border-t border-slate-200">
+                        <span>Divergência / Quebra:</span>
+                        <span className={
+                          !selectedHistoricalSession.difference || selectedHistoricalSession.difference === 0
+                            ? 'text-emerald-600'
+                            : selectedHistoricalSession.difference < 0
+                            ? 'text-rose-600'
+                            : 'text-indigo-600'
+                        }>
+                          {!selectedHistoricalSession.difference || selectedHistoricalSession.difference === 0
+                            ? 'Exato (Sem diferença)'
+                            : `${selectedHistoricalSession.difference > 0 ? '+' : ''}${formatCurrency(selectedHistoricalSession.difference)}`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {selectedHistoricalSession.notes && (
+                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/60 text-xs">
+                        <span className="font-bold text-amber-900 block mb-0.5">Justificativa / Observações:</span>
+                        <p className="text-amber-800">{selectedHistoricalSession.notes}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistoricalSession(null)}
+                      className="px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
+                    >
+                      Fechar Relatório
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2072,19 +2264,33 @@ function FinanceiroContent() {
       {/* CONTEÚDO DA ABA 3: FATURAMENTO DE VENDAS */}
       {activeTab === 'sales_cashflow' && (
         <div className="space-y-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={salesSearch}
-                onChange={(e) => setSalesSearch(e.target.value)}
-                placeholder="Buscar por número da venda, cliente ou vendedor..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-              />
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              <div className="relative flex-1 min-w-[240px] max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={salesSearch}
+                  onChange={(e) => setSalesSearch(e.target.value)}
+                  placeholder="Buscar por número da venda, cliente ou vendedor..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <select
+                value={salesStatusFilter}
+                onChange={(e) => setSalesStatusFilter(e.target.value as any)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-semibold focus:outline-hidden"
+              >
+                <option value="ALL">Status (Todos os Lançamentos)</option>
+                <option value="COMPLETED">Apenas Concluídas / Recebidas</option>
+                <option value="QUOTE">Apenas Orçamentos</option>
+                <option value="CANCELLED">Apenas Canceladas</option>
+              </select>
             </div>
-            <span className="text-xs text-slate-400 font-semibold hidden sm:inline">
-              Mostrando {filteredSales.length} de {completedSales.length} faturamentos
+
+            <span className="text-xs text-slate-400 font-semibold">
+              Mostrando {filteredSales.length} de {sales.length} vendas registradas
             </span>
           </div>
 
@@ -2094,7 +2300,7 @@ function FinanceiroContent() {
                 <Receipt className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                 <h3 className="text-sm font-bold text-slate-800">Nenhum faturamento de venda encontrado</h3>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                  Vendas concluídas geram faturamento registrado aqui com valor bruto, desconto e valor líquido.
+                  Nenhuma venda cadastrada no sistema corresponde aos filtros de busca aplicados.
                 </p>
               </div>
             ) : (
@@ -2134,17 +2340,29 @@ function FinanceiroContent() {
                         <td className="py-3.5 px-4 font-medium text-rose-600">
                           {s.discount && s.discount > 0 ? `- ${formatCurrency(s.discount)}` : '-'}
                         </td>
-                        <td className="py-3.5 px-4 font-bold text-emerald-700">
+                        <td className={`py-3.5 px-4 font-bold ${s.status === 'CANCELLED' ? 'text-slate-400 line-through' : 'text-emerald-700'}`}>
                           {formatCurrency(s.total)}
                         </td>
                         <td className="py-3.5 px-4 font-mono text-amber-600 font-semibold">
-                          {s.commission_total > 0 ? formatCurrency(s.commission_total) : 'R$ 0,00'}
+                          {s.status === 'CANCELLED' ? 'Cancelada' : s.commission_total > 0 ? formatCurrency(s.commission_total) : 'R$ 0,00'}
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Recebida
-                          </span>
+                          {s.status === 'COMPLETED' && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              <CheckCircle2 className="w-3 h-3 mr-1" />
+                              Recebida
+                            </span>
+                          )}
+                          {s.status === 'QUOTE' && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                              Orçamento
+                            </span>
+                          )}
+                          {s.status === 'CANCELLED' && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/60">
+                              Cancelada
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}

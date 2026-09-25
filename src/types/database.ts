@@ -1,6 +1,6 @@
 export type UserRole = 'ADMIN' | 'GERENTE' | 'VENDEDOR';
 export type CustomerType = 'PF' | 'PJ';
-export type SaleStatus = 'DRAFT' | 'COMPLETED' | 'CANCELLED';
+export type SaleStatus = 'DRAFT' | 'COMPLETED' | 'CANCELLED' | 'QUOTE';
 export type CommissionType = 'NONE' | 'PERCENTAGE' | 'FIXED';
 export type CommissionStatus = 'PENDENTE' | 'APROVADA' | 'PAGA' | 'CANCELADA';
 
@@ -167,8 +167,8 @@ export interface SaleItem {
 export interface Sale {
   id: string;
   company_id: string;
-  customer_id: string;
-  customer?: Customer;
+  customer_id?: string | null;
+  customer?: Customer | null;
   seller_id: string;
   seller?: Profile;
   professional_id?: string | null;
@@ -190,6 +190,7 @@ export interface Sale {
     due_date: string;
     amount: number;
   }>;
+  converted_from_quote_id?: string | null;
   notes?: string | null;
   sold_at: string;
   created_at: string;
@@ -377,3 +378,19 @@ export interface PriceHistorySummary {
   avg_price: number | null;
   history: PriceHistoryRecord[];
 }
+
+export interface SaleAuditLog {
+  id: string;
+  company_id: string;
+  sale_id: string;
+  sale_number: number;
+  user_id?: string | null;
+  user_name: string;
+  action: 'CREATE' | 'EDIT' | 'CANCEL' | 'CONVERT_QUOTE';
+  description: string;
+  reason?: string | null;
+  previous_state?: any;
+  new_state?: any;
+  created_at: string;
+}
+

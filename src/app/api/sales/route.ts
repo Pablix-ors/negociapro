@@ -13,6 +13,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
+    const customerId = searchParams.get('customer_id');
 
     if (!companyId) {
       return NextResponse.json({ success: false, error: 'company_id é obrigatório' }, { status: 400 });
@@ -21,11 +22,16 @@ export async function GET(request: Request) {
     const supabase = getAdminClient();
 
     // 1. Buscar vendas
-    const { data: sales, error: salesErr } = await supabase
+    let query = supabase
       .from('sales')
       .select('*, customer:customers(*), professional:professionals(*), seller:profiles(*)')
-      .eq('company_id', companyId)
-      .order('sold_at', { ascending: false });
+      .eq('company_id', companyId);
+
+    if (customerId) {
+      query = query.eq('customer_id', customerId);
+    }
+
+    const { data: sales, error: salesErr } = await query.order('sold_at', { ascending: false });
 
     if (salesErr) {
       return NextResponse.json({ success: false, error: salesErr.message }, { status: 500 });
@@ -196,6 +202,94 @@ export async function PATCH(request: Request) {
   }
 }
 
+// PUT: Editar venda existente (Apenas ADMIN ou GERENTE com permissão)
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { company_id, sale_id, sale, items, requester_role, requester_name, requester_id } = body;
+
+    if (!company_id || !sale_id || !sale) {
+      return NextResponse.json({ success: false, error: 'company_id, sale_id e sale são obrigatórios' }, { status: 400 });
+    }
+
+    // Validação estrita de permissão no backend
+    const isAuthorized = requester_role === 'ADMIN' || requester_role === 'GERENTE';
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, error: 'Apenas Administradores ou Gerentes possuem permissão para editar vendas finalizadas.' },
+        { status: 403 }
+      );
+    }
+
+    const supabase = getAdminClient();
+
+    // 1. Atualizar registro da venda
+    const updatePayload: any = {
+      customer_id: sale.customer_id || null,
+      professional_id: sale.professional_id || null,
+      subtotal: Number(sale.subtotal) || 0,
+      discount: Number(sale.discount) || 0,
+      total: Number(sale.total) || 0,
+      commission_total: Number(sale.commission_total) || 0,
+      payment_method_name: sale.payment_method_name || null,
+      payment_type: sale.payment_type || 'A_VISTA',
+      notes: sale.notes || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (sale.status) {
+      updatePayload.status = sale.status;
+    }
+
+    const { data: updatedSale, error: updateErr } = await supabase
+      .from('sales')
+      .update(updatePayload)
+      .eq('id', sale_id)
+      .eq('company_id', company_id)
+      .select('*, customer:customers(*), professional:professionals(*)')
+      .single();
+
+    if (updateErr) {
+      console.error('Erro ao atualizar venda no Supabase:', updateErr.message);
+      return NextResponse.json({ success: false, error: updateErr.message }, { status: 500 });
+    }
+
+    // 2. Atualizar itens se fornecidos
+    if (Array.isArray(items)) {
+      // Deletar itens antigos
+      await supabase.from('sale_items').delete().eq('sale_id', sale_id);
+
+      if (items.length > 0) {
+        const itemsPayload = items.map((it: any) => ({
+          sale_id,
+          company_id,
+          product_id: it.product_id,
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unit_price) || 0,
+          discount: Number(it.discount) || 0,
+          total: Number(it.total) || 0,
+          commission_type_snapshot: it.commission_type_snapshot || 'NONE',
+          commission_value_snapshot: Number(it.commission_value_snapshot) || 0,
+          commission_amount: Number(it.commission_amount) || 0,
+        }));
+
+        const { data: insertedItems } = await supabase
+          .from('sale_items')
+          .insert(itemsPayload)
+          .select('*, product:products(*)');
+
+        updatedSale.items = insertedItems || items;
+      } else {
+        updatedSale.items = [];
+      }
+    }
+
+    return NextResponse.json({ success: true, sale: updatedSale });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
+  }
+}
+
 // DELETE: Excluir venda definitivamente (e seus itens vinculados)
 export async function DELETE(request: Request) {
   try {
@@ -244,3 +338,4 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
 }
+

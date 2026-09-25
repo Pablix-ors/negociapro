@@ -21,7 +21,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useMaster } from '@/context/MasterAuthContext';
+import { useSidebar } from '@/context/SidebarContext';
 import InstallPWAButton from '@/components/pwa/InstallPWAButton';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 const commercialNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -45,77 +47,71 @@ export default function Sidebar() {
   const pathname = usePathname() || '';
   const { user, company } = useAuth();
   const { impersonatedCompany } = useMaster();
+  const { isCollapsed, toggleSidebar } = useSidebar();
 
   const isAdmin = Boolean(impersonatedCompany) || user?.role === 'ADMIN';
   const isOwnerOrAdmin = isAdmin || user?.role === 'GERENTE';
-  const isProfessional = user?.role === 'VENDEDOR';
 
   const activeCompanyName = impersonatedCompany?.trade_name || impersonatedCompany?.name || company?.trade_name || company?.name || 'Estabelecimento';
 
   return (
-    <aside className="hidden lg:flex lg:flex-col w-64 bg-slate-900 text-slate-200 border-r border-slate-800 shrink-0">
+    <aside
+      className={`hidden lg:flex lg:flex-col ${
+        isCollapsed ? 'w-20' : 'w-60'
+      } bg-[#0c1e3d] text-slate-300 border-r border-[#152e59] shrink-0 select-none transition-all duration-300 ease-in-out relative z-40`}
+    >
       {/* Brand Header */}
-      <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-        <Link href="/" className="flex items-center space-x-2.5 group" title="Voltar à Página Inicial">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
+      <div className={`h-20 ${isCollapsed ? 'px-3 justify-center' : 'px-6 justify-between'} flex items-center border-b border-white/5`}>
+        <Link href="/" className="flex items-center space-x-3 group" title={isCollapsed ? 'NegociaPro' : undefined}>
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-600/30 group-hover:scale-105 transition-transform shrink-0">
             <TrendingUp className="w-5 h-5 text-white stroke-[2.5]" />
           </div>
-          <div>
-            <div className="flex items-center space-x-1.5">
-              <span className="font-black tracking-tight text-white text-lg">Negocia</span>
-              <span className="text-blue-400 font-black text-lg">Pro</span>
+          {!isCollapsed && (
+            <div className="overflow-hidden transition-all duration-200">
+              <div className="flex items-center space-x-1">
+                <span className="font-black text-xl text-white tracking-tight">Negocia</span>
+                <span className="font-black text-xl text-blue-400">Pro</span>
+              </div>
+              <span className="text-[10px] text-blue-200/60 font-semibold tracking-wider block uppercase whitespace-nowrap">
+                SaaS Comercial
+              </span>
             </div>
-            <span className="text-[10px] text-slate-400 tracking-wider block font-medium">
-              SaaS Comercial
-            </span>
-          </div>
+          )}
         </Link>
       </div>
 
       {/* Estabelecimento Ativo */}
-      <div className="mx-4 mt-3 px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center space-x-2.5">
-        <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
-          <Building2 className="w-4 h-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block">Estabelecimento</span>
-          <span className="text-xs font-bold text-white block truncate" title={activeCompanyName}>
-            {activeCompanyName}
-          </span>
-        </div>
-      </div>
-
-      {/* Slogan Banner e Identificador do Tipo de Usuário */}
-      <div className="mx-4 my-3 space-y-2">
-        <div className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center space-x-2">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <p className="text-[11px] text-slate-300 italic font-medium leading-tight">
-            Venda com histórico. Negocie com inteligência.
-          </p>
-        </div>
-
-        <div className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between border ${
-          isOwnerOrAdmin
-            ? 'bg-blue-950/70 text-blue-300 border-blue-800/60'
-            : 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60'
-        }`}>
-          <span className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${isOwnerOrAdmin ? 'bg-blue-400 animate-pulse' : 'bg-emerald-400'}`} />
-            {isOwnerOrAdmin ? 'Dono / Administrador' : 'Profissional / Vendedor'}
-          </span>
-          <span className="text-[9px] uppercase tracking-wider font-mono opacity-80">
-            {user?.role || 'ACESSO'}
-          </span>
+      <div className={`${isCollapsed ? 'px-2 py-3' : 'px-4 py-3'} border-b border-white/5 bg-white/[0.02]`}>
+        <div
+          className={`flex items-center ${
+            isCollapsed ? 'justify-center p-2' : 'space-x-2.5 px-3 py-2'
+          } rounded-xl bg-white/[0.04] border border-white/5`}
+          title={isCollapsed ? `Estabelecimento: ${activeCompanyName}` : undefined}
+        >
+          <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+            <Building2 className="w-4 h-4" />
+          </div>
+          {!isCollapsed && (
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block">Estabelecimento</span>
+              <span className="text-xs font-bold text-white block truncate" title={activeCompanyName}>
+                {activeCompanyName}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Navigation Links */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-6 dark-scrollbar">
+      <div className={`flex-1 overflow-y-auto ${isCollapsed ? 'px-2' : 'px-3.5'} py-4 space-y-6 dark-scrollbar`}>
+        {/* Menu Comercial / Principal */}
         <div>
-          <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Comercial
-          </span>
-          <nav className="mt-2 space-y-1">
+          {!isCollapsed && (
+            <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400/80 block mb-2">
+              Menu
+            </span>
+          )}
+          <nav className="space-y-1">
             {commercialNavigation
               .filter((item) => {
                 if (item.adminOnly) return isAdmin;
@@ -129,26 +125,32 @@ export default function Sidebar() {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    title={isCollapsed ? item.name : undefined}
+                    className={`flex items-center ${
+                      isCollapsed ? 'justify-center px-2 py-3' : 'space-x-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                        : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
+                        : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.name}</span>
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    {!isCollapsed && <span className="truncate">{item.name}</span>}
                   </Link>
                 );
               })}
           </nav>
         </div>
 
+        {/* Menu Configurações */}
         {isAdmin && (
           <div>
-            <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Configurações
-            </span>
-            <nav className="mt-2 space-y-1">
+            {!isCollapsed && (
+              <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400/80 block mb-2">
+                Configurações
+              </span>
+            )}
+            <nav className="space-y-1">
               {configNavigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname.startsWith(item.href);
@@ -156,14 +158,17 @@ export default function Sidebar() {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    title={isCollapsed ? item.name : undefined}
+                    className={`flex items-center ${
+                      isCollapsed ? 'justify-center px-2 py-2.5' : 'space-x-3 px-3.5 py-2'
+                    } rounded-xl text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
+                        : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.name}</span>
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    {!isCollapsed && <span className="truncate">{item.name}</span>}
                   </Link>
                 );
               })}
@@ -173,17 +178,40 @@ export default function Sidebar() {
       </div>
 
       {/* Botão de Instalar App PWA */}
-      <div className="px-4 py-2">
-        <InstallPWAButton variant="sidebar" />
+      {!isCollapsed && (
+        <div className="px-4 py-2 border-t border-white/5">
+          <InstallPWAButton variant="sidebar" />
+        </div>
+      )}
+
+      {/* Botão de Toggle na base da Sidebar */}
+      <div className="p-3 border-t border-white/5 flex items-center justify-between bg-black/10">
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          title={isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+          className={`w-full flex items-center ${
+            isCollapsed ? 'justify-center' : 'justify-between'
+          } p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.06] text-xs font-semibold transition-colors cursor-pointer`}
+        >
+          {!isCollapsed && <span>Recolher Menu</span>}
+          {isCollapsed ? (
+            <PanelLeftOpen className="w-4 h-4 text-blue-400" />
+          ) : (
+            <PanelLeftClose className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
       </div>
 
-      {/* Footer Info */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/40 text-[11px] text-slate-400 flex items-center justify-between">
-        <span>NegociaPro v1.2</span>
-        <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-semibold text-[10px]">
-          Online
-        </span>
-      </div>
+      {/* Footer Info com Status */}
+      {!isCollapsed && (
+        <div className="px-4 py-3 border-t border-white/5 bg-black/20 text-[11px] text-slate-400 flex items-center justify-between">
+          <span className="font-semibold text-slate-400">NegociaPro</span>
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[10px]">
+            Online
+          </span>
+        </div>
+      )}
     </aside>
   );
 }

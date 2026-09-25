@@ -33,7 +33,7 @@ import {
 export default function ClienteDetalhesPage() {
   const params = useParams();
   const router = useRouter();
-  const { customers, sales, receivables, paymentReceipts, updateCustomer, deleteCustomer } = useData();
+  const { customers, products, sales, receivables, paymentReceipts, updateCustomer, deleteCustomer } = useData();
   const { user } = useAuth();
   const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
 
@@ -203,8 +203,12 @@ export default function ClienteDetalhesPage() {
     );
   }
 
-  // Vendas deste cliente
-  const customerSales = sales.filter((s) => s.customer_id === customer.id);
+  // Vendas deste cliente (com fallback robusto por id, customer?.id ou documento)
+  const customerSales = sales.filter((s) => {
+    if (s.customer_id === customer.id || s.customer?.id === customer.id) return true;
+    if (customer.document && s.customer?.document && s.customer.document === customer.document) return true;
+    return false;
+  });
   const totalPurchased = customerSales.reduce((acc, s) => acc + (s.status === 'COMPLETED' ? s.total : 0), 0);
   const avgTicket = customerSales.length > 0 ? totalPurchased / customerSales.length : 0;
 
@@ -344,7 +348,7 @@ export default function ClienteDetalhesPage() {
               activeTab === 'negociacoes' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Histórico de Negociações
+            Histórico de Negociações ({customerSales.reduce((acc, s) => acc + (s.items?.length || 0), 0)})
           </button>
           <button
             type="button"
@@ -388,74 +392,247 @@ export default function ClienteDetalhesPage() {
       {activeTab === 'compras' && (
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           {customerSales.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400">
-              Nenhuma venda registrada para este cliente até o momento.
+            <div className="p-12 text-center text-xs text-slate-400">
+              <ShoppingCart className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <span>Nenhuma compra registrada para este cliente até o momento.</span>
             </div>
           ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
-                <tr>
-                  <th className="p-3">Pedido</th>
-                  <th className="p-3">Data</th>
-                  <th className="p-3">Vendedor</th>
-                  <th className="p-3 text-right">Total</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {customerSales.map((sale) => (
-                  <tr key={sale.id} className="hover:bg-slate-50">
-                    <td className="p-3 font-bold text-slate-900">#{sale.sale_number}</td>
-                    <td className="p-3 text-slate-600">{formatDate(sale.sold_at)}</td>
-                    <td className="p-3 text-slate-600">{sale.seller?.name || 'Vendedor'}</td>
-                    <td className="p-3 text-right font-black text-blue-700">{formatCurrency(sale.total)}</td>
-                    <td className="p-3 text-center">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-                        {sale.status}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <Link
-                        href={`/vendas/nova?cliente=${customer.id}&repetir_venda=${sale.id}`}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold transition-all shadow-2xs"
-                        title="Iniciar nova venda carregando os mesmos produtos deste pedido"
-                      >
-                        <ShoppingCart className="w-3 h-3" />
-                        <span>Repetir Pedido</span>
-                      </Link>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                  <tr>
+                    <th className="p-3.5">Pedido</th>
+                    <th className="p-3.5">Data</th>
+                    <th className="p-3.5 text-center">Itens</th>
+                    <th className="p-3.5">Vendedor / Profissional</th>
+                    <th className="p-3.5">Forma de Pagamento</th>
+                    <th className="p-3.5 text-center">Status</th>
+                    <th className="p-3.5 text-right">Valor Total</th>
+                    <th className="p-3.5 text-center">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {customerSales.map((sale) => (
+                    <tr key={sale.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="p-3.5 font-black text-slate-900">
+                        #{sale.sale_number}
+                      </td>
+                      <td className="p-3.5 text-slate-600 whitespace-nowrap">
+                        {formatDate(sale.sold_at)}
+                      </td>
+                      <td className="p-3.5 text-center font-medium text-slate-600">
+                        {sale.items?.length || 1} {sale.items?.length === 1 ? 'item' : 'itens'}
+                      </td>
+                      <td className="p-3.5 text-slate-700">
+                        {sale.professional?.name || sale.seller?.name || 'Vendas Internas'}
+                      </td>
+                      <td className="p-3.5 text-slate-600 font-semibold">
+                        {sale.payment_method_name || (sale.payment_type === 'A_VISTA' ? 'À vista' : 'A prazo')}
+                      </td>
+                      <td className="p-3.5 text-center whitespace-nowrap">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          sale.status === 'COMPLETED'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : sale.status === 'QUOTE'
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                          {sale.status === 'COMPLETED' ? 'Concluída' : sale.status === 'QUOTE' ? 'Orçamento' : 'Cancelada'}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-right font-black text-slate-900 whitespace-nowrap">
+                        {formatCurrency(sale.total)}
+                      </td>
+                      <td className="p-3.5 text-center whitespace-nowrap">
+                        <Link
+                          href={`/vendas/nova?cliente=${customer.id}&repetir_venda=${sale.id}`}
+                          className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                          title="Iniciar nova venda baseada nos produtos e preços negociados desta compra"
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          <span>Repetir Negociação</span>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
-      {activeTab === 'negociacoes' && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
-          <div className="flex items-center space-x-2 pb-4 border-b border-slate-100">
-            <History className="w-5 h-5 text-blue-600" />
-            <h3 className="text-sm font-bold text-slate-900">Histórico de Preços Negociados</h3>
-          </div>
-          <p className="text-xs text-slate-500 my-3">
-            O NegociaPro preserva o histórico de negociações de forma perene. Sempre que uma nova venda for iniciada para este cliente, os preços negociados anteriormente serão recuperados automaticamente.
-          </p>
-          <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-100 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-bold text-blue-950 block">Deseja simular ou realizar uma negociação agora?</span>
-              <span className="text-[11px] text-blue-700">Acesse a tela de vendas com este cliente e os produtos já pré-selecionados.</span>
+      {activeTab === 'negociacoes' && (() => {
+        // Extrair todas as negociações de itens realizadas para este cliente em ordem cronológica
+        const negotiatedItems: Array<{
+          id: string;
+          saleId: string;
+          saleNumber: number;
+          saleDate: string;
+          status: string;
+          sellerName: string;
+          productId: string;
+          productName: string;
+          productBrand: string | null;
+          productUnit: string;
+          catalogPrice: number;
+          quantity: number;
+          unitPrice: number;
+          discount: number;
+          totalPrice: number;
+        }> = [];
+
+        customerSales.forEach((s) => {
+          (s.items || []).forEach((item, idx) => {
+            const prod = item.product || products.find((p) => p.id === item.product_id);
+            negotiatedItems.push({
+              id: `${s.id}-${idx}`,
+              saleId: s.id,
+              saleNumber: s.sale_number,
+              saleDate: s.sold_at,
+              status: s.status,
+              sellerName: s.professional?.name || s.seller?.name || 'Vendas Internas',
+              productId: item.product_id,
+              productName: prod?.name || 'Produto',
+              productBrand: prod?.brand || null,
+              productUnit: prod?.unit || 'UN',
+              catalogPrice: prod?.selling_price || item.unit_price,
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              discount: item.discount,
+              totalPrice: item.total,
+            });
+          });
+        });
+
+        // Ordenar pelos mais recentes
+        negotiatedItems.sort((a, b) => new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime());
+
+        return (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100 gap-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Histórico de Preços e Produtos Negociados</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {negotiatedItems.length} {negotiatedItems.length === 1 ? 'registro de produto negociado' : 'registros de produtos negociados'} com este cliente.
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/vendas/nova?cliente=${customer.id}`}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span>Iniciar Nova Venda</span>
+                </Link>
+              </div>
+
+              {negotiatedItems.length === 0 ? (
+                <div className="p-12 text-center text-xs text-slate-400">
+                  <History className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p className="font-semibold text-slate-600">Nenhum produto negociado encontrado ainda.</p>
+                  <p className="mt-1">Assim que uma venda ou orçamento for gerado para este cliente, os itens e preços negociados aparecerão aqui automaticamente.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto mt-4">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                        <th className="p-3.5">Produto</th>
+                        <th className="p-3.5">Data / Pedido</th>
+                        <th className="p-3.5">Profissional</th>
+                        <th className="p-3.5 text-center">Qtd.</th>
+                        <th className="p-3.5 text-right">Preço Tabela</th>
+                        <th className="p-3.5 text-right">Preço Praticado</th>
+                        <th className="p-3.5 text-right">Desconto</th>
+                        <th className="p-3.5 text-right">Total Item</th>
+                        <th className="p-3.5 text-center">Status</th>
+                        <th className="p-3.5 text-center">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {negotiatedItems.map((item) => {
+                        const hasDiscount = item.discount > 0 || item.unitPrice < item.catalogPrice;
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="p-3.5 font-bold text-slate-900">
+                              <div className="flex flex-col">
+                                <span>{item.productName}</span>
+                                {item.productBrand && (
+                                  <span className="text-[11px] font-normal text-slate-400">
+                                    Marca: {item.productBrand} • Unid: {item.productUnit}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <div className="font-semibold text-slate-700">{formatDate(item.saleDate)}</div>
+                              <span className="text-[11px] font-mono text-blue-600">Pedido #{item.saleNumber}</span>
+                            </td>
+                            <td className="p-3.5 text-slate-600 whitespace-nowrap">
+                              {item.sellerName}
+                            </td>
+                            <td className="p-3.5 text-center font-bold text-slate-800">
+                              {item.quantity} {item.productUnit}
+                            </td>
+                            <td className="p-3.5 text-right font-medium text-slate-400 line-through whitespace-nowrap">
+                              {formatCurrency(item.catalogPrice)}
+                            </td>
+                            <td className="p-3.5 text-right font-black text-slate-900 whitespace-nowrap">
+                              {formatCurrency(item.unitPrice)}
+                            </td>
+                            <td className="p-3.5 text-right whitespace-nowrap">
+                              {item.discount > 0 ? (
+                                <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full text-[11px]">
+                                  -{formatCurrency(item.discount)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-medium">-</span>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-right font-black text-slate-900 whitespace-nowrap">
+                              {formatCurrency(item.totalPrice)}
+                            </td>
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  item.status === 'COMPLETED'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : item.status === 'QUOTE'
+                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    : 'bg-red-50 text-red-700 border border-red-200'
+                                }`}
+                              >
+                                {item.status === 'COMPLETED' ? 'Venda' : item.status === 'QUOTE' ? 'Orçamento' : 'Cancelado'}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              <Link
+                                href={`/vendas/nova?cliente=${customer.id}&repetir_venda=${item.saleId}`}
+                                className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                                title="Abrir venda com produtos deste pedido"
+                              >
+                                <ShoppingCart className="w-3 h-3" />
+                                <span>Usar Preço</span>
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-            <Link
-              href={`/vendas/nova?cliente=${customer.id}`}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
-            >
-              Ir para Tela de Venda
-            </Link>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {activeTab === 'financeiro' && (() => {
         const clientReceivables = receivables.filter((r) => r.customer_id === customer.id);

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 export default function ClientesPage() {
-  const { customers, deleteCustomer } = useData();
+  const { customers, deleteCustomer, sales } = useData();
   const { user } = useAuth();
   const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
   const [filterQuery, setFilterQuery] = useState('');
@@ -220,15 +220,26 @@ export default function ClientesPage() {
                       <td className="p-4 text-slate-600 whitespace-nowrap">
                         {cust.city ? `${cust.city}/${cust.state || 'SP'}` : '-'}
                       </td>
-                      <td className="p-4 text-right font-black text-slate-900 whitespace-nowrap">
-                        {formatCurrency(cust.total_purchased)}
-                        <span className="block text-[10px] text-slate-400 font-normal">
-                          {cust.orders_count || 0} compras
-                        </span>
-                      </td>
-                      <td className="p-4 text-slate-500 whitespace-nowrap">
-                        {formatDate(cust.last_purchase_date)}
-                      </td>
+                      {(() => {
+                        const cSales = sales.filter((s) => s.customer_id === cust.id || s.customer?.id === cust.id || (cust.document && s.customer?.document === cust.document));
+                        const totalSpent = cSales.reduce((acc, s) => acc + (s.status === 'COMPLETED' ? s.total : 0), 0);
+                        const ordersCount = cSales.filter((s) => s.status === 'COMPLETED').length;
+                        const lastSaleDate = cSales[0]?.sold_at || cSales[0]?.created_at || cust.last_purchase_date;
+
+                        return (
+                          <>
+                            <td className="p-4 text-right font-black text-slate-900 whitespace-nowrap">
+                              {formatCurrency(totalSpent || cust.total_purchased || 0)}
+                              <span className="block text-[10px] text-slate-400 font-normal">
+                                {ordersCount || cust.orders_count || 0} compras
+                              </span>
+                            </td>
+                            <td className="p-4 text-slate-500 whitespace-nowrap">
+                              {formatDate(lastSaleDate)}
+                            </td>
+                          </>
+                        );
+                      })()}
                       <td className="p-4 text-center whitespace-nowrap">
                         {cust.active ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
