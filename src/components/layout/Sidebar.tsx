@@ -23,7 +23,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useMaster } from '@/context/MasterAuthContext';
 import { useSidebar } from '@/context/SidebarContext';
 import InstallPWAButton from '@/components/pwa/InstallPWAButton';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 const commercialNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -184,24 +183,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Botão de Toggle na base da Sidebar */}
-      <div className="p-3 border-t border-white/5 flex items-center justify-between bg-black/10">
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          title={isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
-          className={`w-full flex items-center ${
-            isCollapsed ? 'justify-center' : 'justify-between'
-          } p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.06] text-xs font-semibold transition-colors cursor-pointer`}
-        >
-          {!isCollapsed && <span>Recolher Menu</span>}
-          {isCollapsed ? (
-            <PanelLeftOpen className="w-4 h-4 text-blue-400" />
-          ) : (
-            <PanelLeftClose className="w-4 h-4 text-slate-400" />
-          )}
-        </button>
-      </div>
+
 
       {/* Footer Info com Status */}
       {!isCollapsed && (
