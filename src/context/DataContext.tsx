@@ -416,13 +416,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 return serverSale;
               });
 
-              // 2. Preservar apenas orçamentos locais ou vendas que AINDA NÃO foram confirmadas pelo servidor
-              // (sale_number não está no servidor = ainda pendente de sync)
-              // Remove vendas "fantasmas" cujo sale_number já foi confirmado pelo servidor (evita duplicatas)
-              const localOnly = prev.filter((p) =>
+              // 2. Preservar APENAS:
+              //   a) Orçamentos locais (QUOTE) com ID temporário cujo sale_number ainda não chegou no servidor
+              //   b) Vendas locais marcadas como _pendingSync=true (POST ainda em andamento)
+              // NUNCA preservar vendas locais COMPLETED sem _pendingSync — causam duplicatas (bug Ivan)
+              const localOnly = prev.filter((p: any) =>
                 !serverSalesMap.has(p.id) &&
-                (p.status === 'QUOTE' || String(p.id).startsWith('sale-')) &&
-                !serverSaleNumbers.has(Number(p.sale_number))
+                !serverSaleNumbers.has(Number(p.sale_number)) &&
+                (p.status === 'QUOTE' || p._pendingSync === true)
               );
               const fullMerged = [...localOnly, ...merged];
 
@@ -439,9 +440,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (savedSales) {
         const parsedSales = JSON.parse(savedSales);
         if (Array.isArray(parsedSales)) {
+          // Filtrar apenas vendas de demonstração antigas que possam ter vazado para o cache real.
+          // NÃO filtrar por prefixo de ID ('sale-0') pois vendas legítimas com sync ainda pendente
+          // usam o padrão 'sale-TIMESTAMP' — descartá-las causa o bug de vendas sumindo (Yanna).
           const cleanSales = isDemo
             ? parsedSales
-            : parsedSales.filter((s) => !String(s.id).startsWith('sale-0') && s.company_id === company?.id);
+            : parsedSales.filter((s: any) =>
+                s.company_id === company?.id &&
+                s.id !== 'sale-01' && s.id !== 'sale-02' && s.id !== 'sale-03' &&
+                s.id !== 'sale-04' && s.id !== 'sale-05' // apenas IDs de demo hard-coded
+              );
           setSales(cleanSales);
         } else {
           setSales(isDemo ? DEMO_SALES : []);
@@ -779,12 +787,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 return serverSale;
               });
 
-              // Preservar apenas orçamentos e vendas locais cujo sale_number ainda NÃO foi confirmado
-              // pelo servidor. Isso elimina duplicatas e vendas "fantasmas" (ex: pedido do "caçador")
-              const localOnly = prev.filter((p) =>
+              // Preservar APENAS orçamentos locais (QUOTE) ou vendas ainda aguardando confirmação
+              // do servidor (_pendingSync=true). Nunca preservar vendas COMPLETED sem essa flag
+              // para evitar duplicatas (bug Ivan) e vendas-fantasma ("caçadora").
+              const localOnly = prev.filter((p: any) =>
                 !serverSalesMap.has(p.id) &&
-                (p.status === 'QUOTE' || String(p.id).startsWith('sale-')) &&
-                !serverSaleNumbers.has(Number(p.sale_number))
+                !serverSaleNumbers.has(Number(p.sale_number)) &&
+                (p.status === 'QUOTE' || p._pendingSync === true)
               );
               const fullMerged = [...localOnly, ...mergedSales];
 
@@ -1642,8 +1651,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       items: enrichedItems.map(i => ({ ...i, sale_id: saleId })),
     };
 
+    // Marcar a venda como pendente de sync enquanto o POST com o servidor ainda não retornou.
+    // Isso impede que o refresh periódico (8s) a preserve como "localOnly" causando duplicatas (bug Ivan).
+    const pendingSale: Sale = { ...createdSale, _pendingSync: true } as any;
+
     // 1. Atualizar vendas
-    const newSales = [createdSale, ...sales];
+    const newSales = [pendingSale, ...sales];
     saveSalesState(newSales);
 
     // Auditoria de criação
@@ -1918,21 +1931,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (createdSale.items || enrichedItems),
               customer: serverSale.customer || createdSale.customer,
               professional: serverSale.professional || createdSale.professional,
-            };
+              // Remover a flag de pendência — venda confirmada pelo servidor
+              _pendingSync: undefined,
+            } as Sale;
             setSales((prev) => {
-              // Substituir a venda local pelo registro definitivo do servidor
-              // Isso também elimina qualquer duplicata local com o mesmo sale_number
+              // Substituir a venda local (pendingSale com _pendingSync) pelo registro definitivo do servidor.
+              // Remover também qualquer outra entrada local com o mesmo sale_number (evita duplicatas).
               const withoutDuplicate = prev.filter(
                 (s) => s.id !== saleId && Number(s.sale_number) !== Number(serverSale.sale_number)
               );
               return [finalMergedSale, ...withoutDuplicate];
             });
           } else if (data && !data.success) {
-            // Se o servidor rejeitou, marcar a venda local como falhou para que o usuário saiba
+            // Se o servidor rejeitou, remover o flag _pendingSync e manter a venda local
+            // mas sem tentar re-sincronizar automaticamente para evitar loops.
             console.warn('Servidor rejeitou a venda:', data.error);
+            setSales((prev) => prev.map((s: any) =>
+              s.id === saleId ? { ...s, _pendingSync: false } : s
+            ));
           }
         })
-        .catch((err) => console.warn('Falha ao persistir venda no Supabase:', err));
+        .catch((err) => {
+          console.warn('Falha ao persistir venda no Supabase:', err);
+          // Em caso de falha de rede, manter a venda com _pendingSync=false
+          // para que o filtro do refresh não a descarte, mas também não crie duplicatas.
+          setSales((prev) => prev.map((s: any) =>
+            s.id === saleId ? { ...s, _pendingSync: false } : s
+          ));
+        });
     }
 
     return createdSale;
