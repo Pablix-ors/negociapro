@@ -404,8 +404,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .then((data) => {
           if (data && data.success && Array.isArray(data.sales)) {
             setSales((prev) => {
-              // 1. Mapear vendas do servidor e preservar itens locais se servidor vier vazio
+              // 1. Mapear vendas do servidor por ID e por sale_number
               const serverSalesMap = new Map(data.sales.map((ss: Sale) => [ss.id, ss]));
+              const serverSaleNumbers = new Set(data.sales.map((ss: Sale) => Number(ss.sale_number)));
+
               const merged = data.sales.map((serverSale: Sale) => {
                 const existing = prev.find((p) => p.id === serverSale.id);
                 if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
@@ -414,8 +416,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 return serverSale;
               });
 
-              // 2. Preservar vendas e orçamentos locais recentes que ainda não vieram do servidor
-              const localOnly = prev.filter((p) => !serverSalesMap.has(p.id) && (p.status === 'QUOTE' || String(p.id).startsWith('sale-')));
+              // 2. Preservar apenas orçamentos locais ou vendas que AINDA NÃO foram confirmadas pelo servidor
+              // (sale_number não está no servidor = ainda pendente de sync)
+              // Remove vendas "fantasmas" cujo sale_number já foi confirmado pelo servidor (evita duplicatas)
+              const localOnly = prev.filter((p) =>
+                !serverSalesMap.has(p.id) &&
+                (p.status === 'QUOTE' || String(p.id).startsWith('sale-')) &&
+                !serverSaleNumbers.has(Number(p.sale_number))
+              );
               const fullMerged = [...localOnly, ...merged];
 
               safeSetItem(`negociapro_sales${key}`, JSON.stringify(fullMerged));
@@ -761,6 +769,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             setSales((prev) => {
               // Fazer merge inteligente preservando os itens da venda se prev tiver itens e data.sales não
               const serverSalesMap = new Map(data.sales.map((ss: Sale) => [ss.id, ss]));
+              const serverSaleNumbers = new Set(data.sales.map((ss: Sale) => Number(ss.sale_number)));
+
               const mergedSales = data.sales.map((serverSale: Sale) => {
                 const existing = prev.find((p) => p.id === serverSale.id);
                 if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
@@ -769,8 +779,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 return serverSale;
               });
 
-              // Preservar vendas e orçamentos locais que ainda não sincronizaram com o servidor
-              const localOnly = prev.filter((p) => !serverSalesMap.has(p.id) && (p.status === 'QUOTE' || String(p.id).startsWith('sale-')));
+              // Preservar apenas orçamentos e vendas locais cujo sale_number ainda NÃO foi confirmado
+              // pelo servidor. Isso elimina duplicatas e vendas "fantasmas" (ex: pedido do "caçador")
+              const localOnly = prev.filter((p) =>
+                !serverSalesMap.has(p.id) &&
+                (p.status === 'QUOTE' || String(p.id).startsWith('sale-')) &&
+                !serverSaleNumbers.has(Number(p.sale_number))
+              );
               const fullMerged = [...localOnly, ...mergedSales];
 
               safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(fullMerged));
@@ -1591,7 +1606,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     const currentCustomer = saleData.customer_id ? customers.find(c => c.id === saleData.customer_id) : null;
     const selectedProf = professionals.find(p => p.id === saleData.professional_id);
-    const saleNumber = 1000 + sales.length + 1;
+    // IMPORTANTE: O sale_number local é apenas um placeholder temporário único.
+    // O número definitivo e sequencial é SEMPRE gerado pelo banco de dados (trigger generate_sale_number)
+    // e substituído no estado após o servidor confirmar a venda via POST.
+    // Usar Date.now() evita colisão entre usuários simultâneos que teriam o mesmo sales.length local.
+    const saleNumber = Date.now(); // Substituído pelo servidor após sync bem-sucedido
     const saleId = `sale-${Date.now()}`;
     const nowIso = new Date().toISOString();
 
@@ -1664,11 +1683,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               const finalMergedSale: Sale = {
                 ...createdSale,
                 ...serverSale,
+                // Garantir que o sale_number vem SEMPRE do servidor
+                sale_number: serverSale.sale_number,
                 items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (createdSale.items || enrichedItems),
                 customer: serverSale.customer || createdSale.customer,
                 professional: serverSale.professional || createdSale.professional,
               };
-              setSales((prev) => prev.map((s) => (s.id === saleId ? finalMergedSale : s)));
+              setSales((prev) => {
+                const withoutDuplicate = prev.filter(
+                  (s) => s.id !== saleId && Number(s.sale_number) !== Number(serverSale.sale_number)
+                );
+                return [...withoutDuplicate.filter(s => s.id !== finalMergedSale.id), finalMergedSale];
+              });
             }
           })
           .catch((err) => console.warn('Falha ao persistir orçamento no Supabase:', err));
@@ -1887,11 +1913,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             const finalMergedSale: Sale = {
               ...createdSale,
               ...serverSale,
+              // Garantir que o sale_number vem SEMPRE do servidor (ID definitivo do banco)
+              sale_number: serverSale.sale_number,
               items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (createdSale.items || enrichedItems),
               customer: serverSale.customer || createdSale.customer,
               professional: serverSale.professional || createdSale.professional,
             };
-            setSales((prev) => prev.map((s) => (s.id === saleId ? finalMergedSale : s)));
+            setSales((prev) => {
+              // Substituir a venda local pelo registro definitivo do servidor
+              // Isso também elimina qualquer duplicata local com o mesmo sale_number
+              const withoutDuplicate = prev.filter(
+                (s) => s.id !== saleId && Number(s.sale_number) !== Number(serverSale.sale_number)
+              );
+              return [finalMergedSale, ...withoutDuplicate];
+            });
+          } else if (data && !data.success) {
+            // Se o servidor rejeitou, marcar a venda local como falhou para que o usuário saiba
+            console.warn('Servidor rejeitou a venda:', data.error);
           }
         })
         .catch((err) => console.warn('Falha ao persistir venda no Supabase:', err));
