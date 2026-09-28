@@ -1,0 +1,64 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+
+	// =========================================================================
+	// NegociaPro — Configuração Cloudflare Workers (Fase 2 — Migração)
+	// Criado por: @opennextjs/cloudflare v1.20.6
+	// IMPORTANTE: NÃO fazer deploy sem revisão e confirmação do usuário.
+	// =========================================================================
+
+	"main": ".open-next/worker.js",
+	"name": "negociapro",
+
+	// Compatibility date mais recente disponível
+	"compatibility_date": "2026-09-28",
+
+	// nodejs_compat: necessário para APIs Node.js usadas nos Route Handlers
+	// global_fetch_strictly_public: alinha o comportamento do fetch com o padrão Workers
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+	// Assets estáticos (Next.js static files, PWA, sw.js, manifest.json, ícones)
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+
+	// Self-reference para caching interno do OpenNext
+	// O nome do service deve bater com o "name" do worker acima
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "negociapro"
+		}
+	],
+
+	// =========================================================================
+	// VARIÁVEIS DE AMBIENTE — NÃO altere os valores aqui.
+	// Valores públicos (NEXT_PUBLIC_*) vão em [vars].
+	// Secrets vão em [secrets] ou no painel Cloudflare Dashboard.
+	// =========================================================================
+
+	"vars": {
+		"NEXT_PUBLIC_APP_NAME": "NegociaPro",
+		"NEXT_PUBLIC_APP_SLOGAN": "Venda com histórico. Negocie com inteligência.",
+		"NEXT_PUBLIC_APP_URL": "https://negociapro.workers.dev"
+	}
+
+	// =========================================================================
+	// SECRETS (NÃO colocar valores aqui — configurar via CLI ou Dashboard)
+	// Execute para cada secret:
+	//   npx wrangler secret put NOME_DA_SECRET
+	//
+	// Lista de secrets necessárias:
+	//   NEXT_PUBLIC_SUPABASE_URL         (pode ser var pública se preferir)
+	//   NEXT_PUBLIC_SUPABASE_ANON_KEY    (pode ser var pública se preferir)
+	//   SUPABASE_SERVICE_ROLE_KEY        ← NUNCA expor no cliente
+	//   RESEND_API_KEY                   ← NUNCA expor no cliente
+	//   RESEND_FROM_EMAIL
+	//   BREVO_API_KEY                    ← NUNCA expor no cliente
+	//   BREVO_FROM_EMAIL
+	//   CNPJAPI_KEY                      ← NUNCA expor no cliente
+	//   MASTER_INITIAL_PASSWORD          ← NUNCA expor no cliente
+	//   MASTER_CUSTOM_PASSWORD           ← NUNCA expor no cliente
+	// =========================================================================
+}
