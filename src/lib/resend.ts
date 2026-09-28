@@ -5,7 +5,7 @@ const resendApiKey = process.env.RESEND_API_KEY;
 // Cliente Resend inicializado com fallback seguro para não travar build ou testes se a chave não estiver presente
 export const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
-export const DEFAULT_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'NegociaPro <onboarding@resend.dev>';
+export const DEFAULT_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || '';
 
 interface SendEmailParams {
   to: string | string[];
@@ -18,7 +18,13 @@ interface SendEmailParams {
 /**
  * Envia e-mail transacional via Resend com tratamento de erro e log
  */
-export async function sendEmail({ to, subject, html, from = DEFAULT_FROM_EMAIL, text }: SendEmailParams) {
+export async function sendEmail({ to, subject, html, from, text }: SendEmailParams) {
+  const sender = from || DEFAULT_FROM_EMAIL;
+  if (!sender) {
+    console.warn('[Resend] RESEND_FROM_EMAIL não configurado no ambiente.');
+    return { success: false, error: 'Remetente do Resend (RESEND_FROM_EMAIL) não configurado.' };
+  }
+
   if (!resend) {
     console.warn('[Resend] API Key não configurada. E-mail simulado:', { to, subject });
     return { success: true, simulated: true };
@@ -26,7 +32,7 @@ export async function sendEmail({ to, subject, html, from = DEFAULT_FROM_EMAIL, 
 
   try {
     const data = await resend.emails.send({
-      from,
+      from: sender,
       to,
       subject,
       html,
