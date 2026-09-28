@@ -418,13 +418,45 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
               // 2. Preservar APENAS:
               //   a) Orçamentos locais (QUOTE) com ID temporário cujo sale_number ainda não chegou no servidor
-              //   b) Vendas locais marcadas como _pendingSync=true (POST ainda em andamento)
+              //   b) Vendas locais marcadas como _pendingSync=true (POST ainda em andamento / falhou e será retentado)
               // NUNCA preservar vendas locais COMPLETED sem _pendingSync — causam duplicatas (bug Ivan)
               const localOnly = prev.filter((p: any) =>
                 !serverSalesMap.has(p.id) &&
                 !serverSaleNumbers.has(Number(p.sale_number)) &&
                 (p.status === 'QUOTE' || p._pendingSync === true)
               );
+
+              // 3. Retentar POST de vendas pendentes que não chegaram ao servidor
+              localOnly
+                .filter((p: any) => p._pendingSync === true && p.status !== 'QUOTE' && company?.id && !isDemoCompany)
+                .forEach((pendingSale: any) => {
+                  fetch('/api/sales', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      company_id: company!.id,
+                      sale: pendingSale,
+                      items: pendingSale.items || [],
+                    }),
+                  })
+                    .then((res) => (res.ok ? res.json() : null))
+                    .then((retryData) => {
+                      if (retryData?.success && retryData.sale) {
+                        const serverSale = retryData.sale;
+                        setSales((prev2) => {
+                          const withoutDup = prev2.filter(
+                            (s) => s.id !== pendingSale.id && Number(s.sale_number) !== Number(serverSale.sale_number)
+                          );
+                          const merged2 = [{ ...pendingSale, ...serverSale, _pendingSync: undefined }, ...withoutDup];
+                          safeSetItem(`negociapro_sales${key}`, JSON.stringify(merged2));
+                          return merged2;
+                        });
+                        console.info('[NegociaPro] Venda pendente sincronizada com sucesso:', serverSale.sale_number);
+                      }
+                    })
+                    .catch(() => { /* silencioso — tentará novamente no próximo ciclo */ });
+                });
+
               const fullMerged = [...localOnly, ...merged];
 
               safeSetItem(`negociapro_sales${key}`, JSON.stringify(fullMerged));
@@ -1986,21 +2018,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               return [finalMergedSale, ...withoutDuplicate];
             });
           } else if (data && !data.success) {
-            // Se o servidor rejeitou, remover o flag _pendingSync e manter a venda local
-            // mas sem tentar re-sincronizar automaticamente para evitar loops.
-            console.warn('Servidor rejeitou a venda:', data.error);
-            setSales((prev) => prev.map((s: any) =>
-              s.id === saleId ? { ...s, _pendingSync: false } : s
-            ));
+            // Servidor rejeitou: manter _pendingSync=true para retentar no próximo refresh
+            console.warn('[NegociaPro] Servidor rejeitou a venda (será retentada):', data?.error);
+            // NÃO mudar _pendingSync para false — a venda precisa ser retentada
           }
         })
         .catch((err) => {
-          console.warn('Falha ao persistir venda no Supabase:', err);
-          // Em caso de falha de rede, manter a venda com _pendingSync=false
-          // para que o filtro do refresh não a descarte, mas também não crie duplicatas.
-          setSales((prev) => prev.map((s: any) =>
-            s.id === saleId ? { ...s, _pendingSync: false } : s
-          ));
+          console.warn('[NegociaPro] Falha de rede ao salvar venda (será retentada em 5s):', err);
+          // Em caso de falha de rede: manter _pendingSync=true para retentar no próximo ciclo
+          // A venda permanece visível e será reenviada automaticamente
         });
     }
 
