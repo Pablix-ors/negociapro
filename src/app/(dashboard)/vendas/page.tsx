@@ -160,16 +160,23 @@ export default function VendasPage() {
     return Array.from(methods).sort();
   }, [sales]);
 
+  // Helper: normaliza acentos para busca tolerante (ex: "Triangulo" encontra "Triângulo")
+  const normalizeStr = (str: string) =>
+    str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
   // Aplicação combinada de todos os filtros
   const filteredSales = useMemo(() => {
     return sales.filter((s) => {
       // 1. Busca rápida superior
-      const q = filterQuery.trim().toLowerCase();
+      const q = normalizeStr(filterQuery.trim());
       if (q) {
         const matchesQuery =
           String(s.sale_number).includes(q) ||
-          (s.customer?.name && s.customer.name.toLowerCase().includes(q)) ||
-          (s.professional?.name && s.professional.name.toLowerCase().includes(q));
+          (s.customer?.name && normalizeStr(s.customer.name).includes(q)) ||
+          (s.professional?.name && normalizeStr(s.professional.name).includes(q));
         if (!matchesQuery) return false;
       }
 
@@ -180,8 +187,8 @@ export default function VendasPage() {
 
       // 3. Filtros Avançados Combinados
       if (appliedFilters.customerName) {
-        const cName = s.customer?.name?.toLowerCase() || '';
-        if (!cName.includes(appliedFilters.customerName.trim().toLowerCase())) return false;
+        const cName = normalizeStr(s.customer?.name || '');
+        if (!cName.includes(normalizeStr(appliedFilters.customerName.trim()))) return false;
       }
 
       if (appliedFilters.customerDoc) {
@@ -227,9 +234,9 @@ export default function VendasPage() {
       }
 
       if (appliedFilters.productName) {
-        const pTerm = appliedFilters.productName.trim().toLowerCase();
+        const pTerm = normalizeStr(appliedFilters.productName.trim());
         const hasProd = (s.items || []).some((item) =>
-          item.product?.name?.toLowerCase().includes(pTerm)
+          normalizeStr(item.product?.name || '').includes(pTerm)
         );
         if (!hasProd) return false;
       }
