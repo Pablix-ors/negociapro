@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   Customer,
   Product,
@@ -263,6 +263,57 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Conjunto de IDs de vendas/orçamentos com sincronização em andamento para evitar chamadas duplicadas
+  const syncingSalesRef = useRef<Set<string>>(new Set());
+
+  // Função centralizada para sincronizar/retentar envio de vendas ou orçamentos para o Supabase
+  const syncPendingSaleToServer = (targetSale: any, currentTenantKey: string, companyId: string) => {
+    if (!targetSale?.id || syncingSalesRef.current.has(targetSale.id)) return;
+    syncingSalesRef.current.add(targetSale.id);
+
+    fetch('/api/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company_id: companyId,
+        sale: targetSale,
+        items: targetSale.items || [],
+      }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.success && data.sale) {
+          const serverSale = data.sale;
+          setSales((prev) => {
+            const withoutDup = prev.filter(
+              (s) => s.id !== targetSale.id && Number(s.sale_number) !== Number(serverSale.sale_number)
+            );
+            const confirmed: Sale = {
+              ...targetSale,
+              ...serverSale,
+              sale_number: serverSale.sale_number,
+              items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (targetSale.items || []),
+              customer: serverSale.customer || targetSale.customer,
+              professional: serverSale.professional || targetSale.professional,
+              _pendingSync: undefined,
+            } as Sale;
+            const updated = [confirmed, ...withoutDup];
+            safeSetItem(`negociapro_sales${currentTenantKey}`, JSON.stringify(updated));
+            return updated;
+          });
+          console.info(`[NegociaPro] ${targetSale.status === 'QUOTE' ? 'Orçamento' : 'Venda'} sincronizado com sucesso:`, serverSale.sale_number);
+        } else {
+          console.warn(`[NegociaPro] Falha ao sincronizar ${targetSale.status === 'QUOTE' ? 'orçamento' : 'venda'}:`, data?.error);
+        }
+      })
+      .catch((err) => {
+        console.warn(`[NegociaPro] Erro de rede ao sincronizar ${targetSale.status === 'QUOTE' ? 'orçamento' : 'venda'}:`, err);
+      })
+      .finally(() => {
+        syncingSalesRef.current.delete(targetSale.id);
+      });
+  };
+
   // Carregar dados de acordo com a empresa atual (persistência segura por tenant)
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -417,7 +468,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               });
 
               // 2. Preservar APENAS:
-              //   a) Orçamentos locais (QUOTE) com ID temporário cujo sale_number ainda não chegou no servidor
+              //   a) Orçamentos locais (QUOTE) cujo ID ou sale_number ainda não chegou no servidor
               //   b) Vendas locais marcadas como _pendingSync=true (POST ainda em andamento / falhou e será retentado)
               // NUNCA preservar vendas locais COMPLETED sem _pendingSync — causam duplicatas (bug Ivan)
               const localOnly = prev.filter((p: any) =>
@@ -426,36 +477,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 (p.status === 'QUOTE' || p._pendingSync === true)
               );
 
-              // 3. Retentar POST de vendas pendentes que não chegaram ao servidor
-              localOnly
-                .filter((p: any) => p._pendingSync === true && p.status !== 'QUOTE' && company?.id && !isDemoCompany)
-                .forEach((pendingSale: any) => {
-                  fetch('/api/sales', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      company_id: company!.id,
-                      sale: pendingSale,
-                      items: pendingSale.items || [],
-                    }),
-                  })
-                    .then((res) => (res.ok ? res.json() : null))
-                    .then((retryData) => {
-                      if (retryData?.success && retryData.sale) {
-                        const serverSale = retryData.sale;
-                        setSales((prev2) => {
-                          const withoutDup = prev2.filter(
-                            (s) => s.id !== pendingSale.id && Number(s.sale_number) !== Number(serverSale.sale_number)
-                          );
-                          const merged2 = [{ ...pendingSale, ...serverSale, _pendingSync: undefined }, ...withoutDup];
-                          safeSetItem(`negociapro_sales${key}`, JSON.stringify(merged2));
-                          return merged2;
-                        });
-                        console.info('[NegociaPro] Venda pendente sincronizada com sucesso:', serverSale.sale_number);
-                      }
-                    })
-                    .catch(() => { /* silencioso — tentará novamente no próximo ciclo */ });
+              // 3. Retentar POST de vendas E orçamentos pendentes que ainda não existem no servidor
+              if (company?.id && !isDemoCompany) {
+                localOnly.forEach((pendingSale: any) => {
+                  syncPendingSaleToServer(pendingSale, key, company.id);
                 });
+              }
 
               const fullMerged = [...localOnly, ...merged];
 
@@ -839,6 +866,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 !serverSaleNumbers.has(Number(p.sale_number)) &&
                 (p.status === 'QUOTE' || p._pendingSync === true)
               );
+
+              // Retentar sincronização automática para qualquer venda ou orçamento local pendente de envio
+              if (localOnly.length > 0 && company?.id && !isDemoCompany) {
+                localOnly.forEach((pending: any) => {
+                  syncPendingSaleToServer(pending, tenantKey, company.id);
+                });
+              }
+
               const fullMerged = [...localOnly, ...mergedSales];
 
               safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(fullMerged));
