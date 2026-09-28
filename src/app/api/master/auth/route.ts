@@ -25,8 +25,8 @@ export async function POST(request: Request) {
 
     // 1. Verificação do Primary Master
     if (cleanEmail === PRIMARY_MASTER_EMAIL) {
-      const initialMasterPass = process.env.MASTER_INITIAL_PASSWORD || 'MasterNegociaPro2026!';
-      const customMasterPass = process.env.MASTER_CUSTOM_PASSWORD || 'Pablo9090!';
+      const initialMasterPass = process.env.MASTER_INITIAL_PASSWORD;
+      const customMasterPass = process.env.MASTER_CUSTOM_PASSWORD;
       const supabase = getAdminClient();
 
       // Verificar se já existe registro com hash de senha customizada no banco (caso a coluna exista)
@@ -47,9 +47,9 @@ export async function POST(request: Request) {
         console.warn('Verificação de banco master_users:', e);
       }
 
-      // Senhas válidas aceitas: senha personalizada definida pelo usuário, senha do banco ou senha inicial provisória
-      const isCustomPass = password === customMasterPass || (dbPassword && password === dbPassword);
-      const isInitialPass = password === initialMasterPass;
+      // Senhas válidas aceitas: senha personalizada definida pelo ambiente, senha do banco ou senha inicial provisória do ambiente
+      const isCustomPass = Boolean(customMasterPass && password === customMasterPass) || Boolean(dbPassword && password === dbPassword);
+      const isInitialPass = Boolean(initialMasterPass && password === initialMasterPass);
       const isPasswordValid = isCustomPass || isInitialPass;
 
       if (!isPasswordValid) {

@@ -19,12 +19,22 @@ export async function sendBrevoEmail({
     return { success: false, error: 'Chave do Brevo SMTP não configurada.' };
   }
 
-  const senderEmail = process.env.BREVO_FROM_EMAIL?.includes('<')
-    ? process.env.BREVO_FROM_EMAIL.match(/<([^>]+)>/)?.[1] || 'pablixgamezgg@gmail.com'
-    : process.env.BREVO_FROM_EMAIL || 'pablixgamezgg@gmail.com';
+  const rawSender = process.env.BREVO_FROM_EMAIL?.trim();
+  if (!rawSender) {
+    console.warn('[Brevo] BREVO_FROM_EMAIL não configurado no ambiente.');
+    return { success: false, error: 'Remetente do Brevo (BREVO_FROM_EMAIL) não configurado.' };
+  }
 
-  const senderName = process.env.BREVO_FROM_EMAIL?.includes('<')
-    ? process.env.BREVO_FROM_EMAIL.split('<')[0].trim() || 'NegociaPro'
+  const senderEmail = rawSender.includes('<')
+    ? rawSender.match(/<([^>]+)>/)?.[1]?.trim() || ''
+    : rawSender;
+
+  if (!senderEmail) {
+    return { success: false, error: 'Formato inválido de BREVO_FROM_EMAIL.' };
+  }
+
+  const senderName = rawSender.includes('<')
+    ? rawSender.split('<')[0].trim() || 'NegociaPro'
     : 'NegociaPro';
 
   try {
