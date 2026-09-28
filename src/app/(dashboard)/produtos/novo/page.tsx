@@ -44,7 +44,7 @@ export default function NovoProdutoPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  // Upload com pré-validação (PNG, JPG, JPEG, WEBP, máx 5MB)
+  // Upload com compressão e redimensionamento automático via Canvas (máx 800x800, JPEG 80% ~40KB)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -56,19 +56,54 @@ export default function NovoProdutoPage() {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('A imagem deve ter no máximo 5MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      setError('A imagem original deve ter no máximo 15MB.');
       return;
     }
 
     setImageLoading(true);
     const reader = new FileReader();
-    reader.onload = () => {
-      setImageUrl(reader.result as string);
-      setImageLoading(false);
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          setImageUrl(compressedDataUrl);
+        } else {
+          setImageUrl(readerEvent.target?.result as string);
+        }
+        setImageLoading(false);
+      };
+      img.onerror = () => {
+        setError('Falha ao processar arquivo de imagem.');
+        setImageLoading(false);
+      };
+      img.src = readerEvent.target?.result as string;
     };
     reader.onerror = () => {
-      setError('Erro ao processar imagem.');
+      setError('Erro ao ler arquivo.');
       setImageLoading(false);
     };
     reader.readAsDataURL(file);

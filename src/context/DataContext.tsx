@@ -827,8 +827,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 data.products.some(
                   (sp: Product, idx: number) =>
                     sp.id !== prev[idx]?.id ||
+                    sp.image_url !== prev[idx]?.image_url ||
+                    sp.name !== prev[idx]?.name ||
                     sp.current_stock !== prev[idx]?.current_stock ||
-                    sp.selling_price !== prev[idx]?.selling_price
+                    sp.selling_price !== prev[idx]?.selling_price ||
+                    sp.updated_at !== prev[idx]?.updated_at
                 )
               ) {
                 safeSetItem(`negociapro_products${tenantKey}`, JSON.stringify(data.products));
