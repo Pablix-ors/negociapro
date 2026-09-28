@@ -91,6 +91,12 @@ export async function POST(request: Request) {
       total: Number(sale.total) || 0,
       commission_total: Number(sale.commission_total) || 0,
       payment_method_id: sale.payment_method_id || null,
+      // Campos adicionados para suporte a orçamentos (QUOTE) e parcelamentos
+      payment_method_name: sale.payment_method_name || null,
+      payment_type: sale.payment_type || 'A_VISTA',
+      installments_count: Number(sale.installments_count) || 1,
+      installments_plan: sale.installments_plan || null,
+      converted_from_quote_id: sale.converted_from_quote_id || null,
       notes: sale.notes || null,
       sold_at: sale.sold_at || new Date().toISOString(),
     };
@@ -233,6 +239,8 @@ export async function PUT(request: Request) {
       commission_total: Number(sale.commission_total) || 0,
       payment_method_name: sale.payment_method_name || null,
       payment_type: sale.payment_type || 'A_VISTA',
+      installments_count: Number(sale.installments_count) || 1,
+      installments_plan: sale.installments_plan || null,
       notes: sale.notes || null,
       updated_at: new Date().toISOString(),
     };

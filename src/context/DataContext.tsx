@@ -805,7 +805,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
     };
 
-    const intervalId = setInterval(refreshLiveServerData, 8000);
+    const intervalId = setInterval(refreshLiveServerData, 5000);
     window.addEventListener('focus', refreshLiveServerData);
     window.addEventListener('visibilitychange', refreshLiveServerData);
 
@@ -1250,6 +1250,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCustomer = (id: string, updatedFields: Partial<Customer>) => {
+    // Atualização otimista imediata para UI responsiva
     const updated = customers.map(c => (c.id === id ? { ...c, ...updatedFields, updated_at: new Date().toISOString() } : c));
     saveCust(updated);
 
@@ -1260,19 +1261,44 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ company_id: company.id, customer: target }),
-        }).catch((err) => console.warn('Falha ao atualizar cliente no Supabase:', err));
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.success && data.customer) {
+              // Substituir com dados confirmados do servidor
+              setCustomers((prev) => {
+                const merged = prev.map(c => (c.id === id ? { ...c, ...data.customer } : c));
+                safeSetItem(`negociapro_customers${tenantKey}`, JSON.stringify(merged));
+                return merged;
+              });
+            }
+          })
+          .catch((err) => console.warn('Falha ao atualizar cliente no Supabase:', err));
       }
     }
   };
 
   const deleteCustomer = (id: string) => {
+    // Remoção otimista imediata
     const updated = customers.filter(c => c.id !== id);
     saveCust(updated);
 
     if (company?.id && !isDemoCompany) {
       fetch(`/api/customers?id=${encodeURIComponent(id)}&company_id=${encodeURIComponent(company.id)}`, {
         method: 'DELETE',
-      }).catch((err) => console.warn('Falha ao deletar cliente no Supabase:', err));
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data?.success) {
+            // Reverter se o servidor rejeitou
+            console.warn('[NegociaPro] Servidor rejeitou exclusão de cliente');
+            fetch(`/api/customers?company_id=${company.id}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d) => { if (d?.success) saveCust(d.customers); })
+              .catch(() => {});
+          }
+        })
+        .catch((err) => console.warn('Falha ao deletar cliente no Supabase:', err));
     }
   };
 
@@ -1701,16 +1727,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 items: (serverSale.items && serverSale.items.length > 0) ? serverSale.items : (createdSale.items || enrichedItems),
                 customer: serverSale.customer || createdSale.customer,
                 professional: serverSale.professional || createdSale.professional,
-              };
+                // Remover a flag de pendencia — orçamento confirmado pelo servidor
+                _pendingSync: undefined,
+              } as Sale;
+              // Usar saveSalesState para persistir no localStorage com o ID definitivo do servidor
               setSales((prev) => {
                 const withoutDuplicate = prev.filter(
                   (s) => s.id !== saleId && Number(s.sale_number) !== Number(serverSale.sale_number)
                 );
-                return [...withoutDuplicate.filter(s => s.id !== finalMergedSale.id), finalMergedSale];
+                const merged = [...withoutDuplicate.filter(s => s.id !== finalMergedSale.id), finalMergedSale];
+                safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(merged));
+                return merged;
               });
+            } else {
+              // Servidor rejeitou: remover _pendingSync para que o refresh de 8s preserve o QUOTE local
+              console.warn('[NegociaPro] Servidor rejeitou orçamento:', data?.error);
+              setSales((prev) => prev.map((s: any) =>
+                s.id === saleId ? { ...s, _pendingSync: false } : s
+              ));
             }
           })
-          .catch((err) => console.warn('Falha ao persistir orçamento no Supabase:', err));
+          .catch((err) => {
+            console.warn('Falha ao persistir orçamento no Supabase:', err);
+            // Em caso de falha de rede: remover _pendingSync, o QUOTE já é preservado pelo status
+            setSales((prev) => prev.map((s: any) =>
+              s.id === saleId ? { ...s, _pendingSync: false } : s
+            ));
+          });
       }
       return createdSale;
     }
@@ -2166,7 +2209,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Sincronizar atualização no Supabase
+    // Sincronizar atualização no Supabase e forçar refresh para todos os usuários
     if (company?.id && !isDemoCompany) {
       fetch('/api/sales', {
         method: 'PUT',
@@ -2180,7 +2223,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           requester_name: user?.name || 'Operador',
           requester_id: user?.id,
         }),
-      }).catch((err) => console.warn('Falha ao converter orçamento no Supabase:', err));
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.success && data.sale) {
+            // Substituir com dados definitivos do servidor
+            const serverSale = data.sale;
+            setSales((prev) => {
+              const merged = prev.map((s) =>
+                s.id === convertedSale.id
+                  ? { ...convertedSale, ...serverSale, items: serverSale.items?.length ? serverSale.items : convertedSale.items }
+                  : s
+              );
+              safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(merged));
+              return merged;
+            });
+          }
+        })
+        .catch((err) => console.warn('Falha ao converter orçamento no Supabase:', err));
     }
 
     return convertedSale;
@@ -2382,7 +2442,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
     saveAuditState([auditLog, ...saleAuditLogs]);
 
-    // 7. Sincronizar com Supabase
+    // 7. Sincronizar com Supabase e persistir dados confirmados no localStorage
     if (company?.id && !isDemoCompany) {
       fetch('/api/sales', {
         method: 'PUT',
@@ -2396,7 +2456,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           requester_name: user?.name || 'Administrador',
           requester_id: user?.id,
         }),
-      }).catch((err) => console.warn('Falha ao sincronizar edição de venda no Supabase:', err));
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.success && data.sale) {
+            const serverSale = data.sale;
+            setSales((prev) => {
+              const merged = prev.map((s) =>
+                s.id === params.sale_id
+                  ? { ...updatedSale, ...serverSale, items: serverSale.items?.length ? serverSale.items : enrichedItems }
+                  : s
+              );
+              safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(merged));
+              return merged;
+            });
+          }
+        })
+        .catch((err) => console.warn('Falha ao sincronizar edicao de venda no Supabase:', err));
     }
 
     return { success: true, sale: updatedSale };
@@ -2407,6 +2483,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!target) return;
 
     const nowIso = new Date().toISOString();
+
+    // Atualização otimista imediata para UI responsiva
     const updated = sales.map(s => {
       if (s.id === id) {
         return {
@@ -2469,12 +2547,50 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
     saveAuditState([auditLog, ...saleAuditLogs]);
 
+    // Sincronizar com servidor — se falhar, re-fetch do servidor para corrigir estado local
     if (company?.id && !isDemoCompany) {
       fetch('/api/sales', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, company_id: company.id, status: 'CANCELLED' }),
-      }).catch((err) => console.warn('Falha ao cancelar venda no Supabase:', err));
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.success && data.sale) {
+            // Substituir com status confirmado pelo servidor
+            setSales((prev) => {
+              const merged = prev.map((s) =>
+                s.id === id ? { ...s, ...data.sale, items: s.items } : s
+              );
+              safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(merged));
+              return merged;
+            });
+          } else if (!data?.success) {
+            // Revert otimista: servidor rejeitou
+            console.warn('[NegociaPro] Servidor rejeitou cancelamento da venda:', data?.error);
+            fetch(`/api/sales?company_id=${company.id}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d) => {
+                if (d?.success && Array.isArray(d.sales)) {
+                  setSales((prev) => {
+                    const serverMap = new Map(d.sales.map((ss: Sale) => [ss.id, ss]));
+                    const merged = d.sales.map((serverSale: Sale) => {
+                      const existing = prev.find((p) => p.id === serverSale.id);
+                      return (existing?.items?.length && !serverSale.items?.length)
+                        ? { ...serverSale, items: existing.items }
+                        : serverSale;
+                    });
+                    const localOnly = prev.filter((p: any) => !serverMap.has(p.id) && (p.status === 'QUOTE' || p._pendingSync));
+                    const fullMerged = [...localOnly, ...merged];
+                    safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(fullMerged));
+                    return fullMerged;
+                  });
+                }
+              })
+              .catch(() => {});
+          }
+        })
+        .catch((err) => console.warn('Falha ao cancelar venda no Supabase:', err));
     }
   };
 
@@ -2487,7 +2603,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       (s) => s.id === String(idOrSaleNumber) || (saleNum !== null && Number(s.sale_number) === saleNum)
     );
 
-    // 1. Remover do array de vendas
+    // 1. Remoção otimista imediata do array de vendas
     const updatedSales = sales.filter((s) => {
       if (saleNum !== null && Number(s.sale_number) === saleNum) return false;
       if (s.id === String(idOrSaleNumber)) return false;
@@ -2510,7 +2626,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const queryParam = saleNum !== null ? `sale_number=${saleNum}` : `id=${encodeURIComponent(String(idOrSaleNumber))}`;
       fetch(`/api/sales?company_id=${encodeURIComponent(company.id)}&${queryParam}`, {
         method: 'DELETE',
-      }).catch((err) => console.warn('Falha ao excluir venda no Supabase:', err));
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data?.success) {
+            // Se o servidor rejeitou, re-fetch para restaurar o estado correto
+            console.warn('[NegociaPro] Servidor rejeitou exclusão da venda:', data?.error);
+          }
+          // Sempre re-fetch após delete para garantir consistência entre usuários
+          fetch(`/api/sales?company_id=${company.id}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (d?.success && Array.isArray(d.sales)) {
+                setSales((prev) => {
+                  const serverMap = new Map(d.sales.map((ss: Sale) => [ss.id, ss]));
+                  const merged = d.sales.map((serverSale: Sale) => {
+                    const existing = prev.find((p) => p.id === serverSale.id);
+                    return (existing?.items?.length && !serverSale.items?.length)
+                      ? { ...serverSale, items: existing.items }
+                      : serverSale;
+                  });
+                  const localOnly = prev.filter((p: any) => !serverMap.has(p.id) && (p.status === 'QUOTE' || p._pendingSync));
+                  const fullMerged = [...localOnly, ...merged];
+                  safeSetItem(`negociapro_sales${tenantKey}`, JSON.stringify(fullMerged));
+                  return fullMerged;
+                });
+              }
+            })
+            .catch(() => {});
+        })
+        .catch((err) => console.warn('Falha ao excluir venda no Supabase:', err));
     }
   };
 
