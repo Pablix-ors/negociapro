@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/formatters';
+import { getDateRange, isDateInRange, StandardPeriod } from '@/lib/dateUtils';
 import { CommissionStatus, AccountReceivable, CashMovement, CashRegisterSession, ReceivableStatus } from '@/types/database';
 import {
   DollarSign,
@@ -192,17 +193,40 @@ function FinanceiroContent() {
     );
   }
 
-  // --- CÁLCULOS FINANCEIROS CONSOLIDADOS ---
-  const completedSales = useMemo(() => {
-    return sales.filter((s) => s.status === 'COMPLETED');
-  }, [sales]);
+  // Intervalo canônico unificado do Painel Financeiro
+  const dateRange = useMemo(() => {
+    const periodKey =
+      globalPeriod === 'TODAY'
+        ? 'today'
+        : globalPeriod === 'YESTERDAY'
+        ? 'yesterday'
+        : globalPeriod === 'WEEK'
+        ? '7d'
+        : globalPeriod === 'MONTH'
+        ? 'month'
+        : globalPeriod === 'LAST_MONTH'
+        ? 'last_month'
+        : globalPeriod === 'LAST_30_DAYS'
+        ? '30d'
+        : 'all';
+    return getDateRange(periodKey);
+  }, [globalPeriod]);
 
-  // Faturamento bruto (soma dos totais das vendas finalizadas)
+  // --- CÁLCULOS FINANCEIROS CONSOLIDADOS (Respeitando o período selecionado) ---
+  const completedSales = useMemo(() => {
+    return sales.filter((s) => {
+      if (s.status !== 'COMPLETED') return false;
+      const saleDate = s.sold_at || s.created_at;
+      return isDateInRange(saleDate, dateRange);
+    });
+  }, [sales, dateRange]);
+
+  // Faturamento bruto (soma dos totais das vendas finalizadas no período)
   const totalRevenue = useMemo(() => {
     return completedSales.reduce((acc, s) => acc + s.total, 0);
   }, [completedSales]);
 
-  // Total de descontos concedidos
+  // Total de descontos concedidos no período
   const totalDiscounts = useMemo(() => {
     return completedSales.reduce((acc, s) => acc + (s.discount || 0), 0);
   }, [completedSales]);
@@ -212,28 +236,35 @@ function FinanceiroContent() {
     return completedSales.reduce((acc, s) => acc + (s.subtotal || s.total), 0);
   }, [completedSales]);
 
-  // Comissões
+  // Comissões no período
+  const periodCommissions = useMemo(() => {
+    return commissions.filter((c) => {
+      const commDate = c.sale_date || c.created_at;
+      return isDateInRange(commDate, dateRange);
+    });
+  }, [commissions, dateRange]);
+
   const totalCommissions = useMemo(() => {
-    return commissions.reduce((acc, c) => acc + c.commission_amount, 0);
-  }, [commissions]);
+    return periodCommissions.reduce((acc, c) => acc + c.commission_amount, 0);
+  }, [periodCommissions]);
 
   const pendingCommissionsTotal = useMemo(() => {
-    return commissions
+    return periodCommissions
       .filter((c) => c.status === 'PENDENTE')
       .reduce((acc, c) => acc + c.commission_amount, 0);
-  }, [commissions]);
+  }, [periodCommissions]);
 
   const approvedCommissionsTotal = useMemo(() => {
-    return commissions
+    return periodCommissions
       .filter((c) => c.status === 'APROVADA')
       .reduce((acc, c) => acc + c.commission_amount, 0);
-  }, [commissions]);
+  }, [periodCommissions]);
 
   const paidCommissionsTotal = useMemo(() => {
-    return commissions
+    return periodCommissions
       .filter((c) => c.status === 'PAGA')
       .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
-  }, [commissions]);
+  }, [periodCommissions]);
 
   // Margem Líquida Comercial após Comissões
   const netRevenueAfterCommissions = totalRevenue - totalCommissions;

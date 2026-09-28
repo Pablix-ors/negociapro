@@ -513,7 +513,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedComms = localStorage.getItem(`negociapro_commissions${key}`);
       if (savedComms) {
-        setCommissions(JSON.parse(savedComms));
+        const parsedComms: CommissionRecord[] = JSON.parse(savedComms);
+        if (!isDemo && Array.isArray(parsedComms)) {
+          const sanitized = parsedComms.filter(
+            (c) =>
+              c.company_id === company?.id &&
+              c.id !== 'comm-01' &&
+              c.id !== 'comm-02' &&
+              c.id !== 'comm-03'
+          );
+          setCommissions(sanitized);
+        } else {
+          setCommissions(Array.isArray(parsedComms) ? parsedComms : isDemo ? DEMO_COMMISSION_RECORDS : []);
+        }
       } else {
         setCommissions(isDemo ? DEMO_COMMISSION_RECORDS : []);
       }

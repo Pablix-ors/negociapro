@@ -327,7 +327,11 @@ export default function ClientesPage() {
                     <div>
                       <span className="text-[10px] text-slate-400 block">Total Comprado</span>
                       <span className="text-sm font-black text-slate-900">
-                        {formatCurrency(cust.total_purchased)}
+                        {(() => {
+                          const cSales = sales.filter((s) => s.customer_id === cust.id || s.customer?.id === cust.id || (cust.document && s.customer?.document === cust.document));
+                          const spent = cSales.reduce((acc, s) => acc + (s.status === 'COMPLETED' ? s.total : 0), 0);
+                          return formatCurrency(spent || cust.total_purchased || 0);
+                        })()}
                       </span>
                     </div>
 

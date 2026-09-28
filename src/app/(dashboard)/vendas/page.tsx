@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/formatters';
+import { getCustomDateRange, isDateInRange } from '@/lib/dateUtils';
 import { Sale } from '@/types/database';
 import SaleReceiptModal from '@/components/sales/SaleReceiptModal';
 import { formatSaleNumber } from '@/components/sales/SaleReceipt';
@@ -202,16 +203,10 @@ export default function VendasPage() {
         if (targetNum && !String(s.sale_number).includes(targetNum)) return false;
       }
 
-      if (appliedFilters.dateStart) {
-        const saleDate = new Date(s.sold_at);
-        const startDate = new Date(`${appliedFilters.dateStart}T00:00:00`);
-        if (saleDate < startDate) return false;
-      }
-
-      if (appliedFilters.dateEnd) {
-        const saleDate = new Date(s.sold_at);
-        const endDate = new Date(`${appliedFilters.dateEnd}T23:59:59`);
-        if (saleDate > endDate) return false;
+      if (appliedFilters.dateStart || appliedFilters.dateEnd) {
+        const customRange = getCustomDateRange(appliedFilters.dateStart, appliedFilters.dateEnd);
+        const sDate = s.sold_at || s.created_at;
+        if (!isDateInRange(sDate, customRange)) return false;
       }
 
       if (appliedFilters.professionalId !== 'ALL') {

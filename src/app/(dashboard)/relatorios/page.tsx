@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/formatters';
+import { getDateRange, isDateInRange, getLocalDateString, getDaysInRange, StandardPeriod } from '@/lib/dateUtils';
 import * as XLSX from 'xlsx';
 import {
   BarChart3,
@@ -55,6 +56,7 @@ export default function RelatoriosPage() {
 
   const [category, setCategory] = useState<ReportCategory>('vendas');
   const [viewMode, setViewMode] = useState<ViewMode>('both');
+  const [period, setPeriod] = useState<StandardPeriod>('30d');
   const [selectedProfId, setSelectedProfId] = useState<string>('ALL');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -64,15 +66,30 @@ export default function RelatoriosPage() {
     setIsMounted(true);
   }, []);
 
-  // Vendas filtradas
+  // Intervalo canônico unificado
+  const dateRange = useMemo(() => {
+    return getDateRange(period);
+  }, [period]);
+
+  // Vendas filtradas por período canônico e filtros adicionais
   const filteredSales = useMemo(() => {
     return sales.filter((s) => {
       const matchProf = selectedProfId === 'ALL' || s.professional_id === selectedProfId;
       const matchCust = selectedCustomerId === 'ALL' || s.customer_id === selectedCustomerId;
       const matchStat = statusFilter === 'ALL' || s.status === statusFilter;
-      return matchProf && matchCust && matchStat;
+      const saleDate = s.sold_at || s.created_at;
+      const matchPeriod = isDateInRange(saleDate, dateRange);
+      return matchProf && matchCust && matchStat && matchPeriod;
     });
-  }, [sales, selectedProfId, selectedCustomerId, statusFilter]);
+  }, [sales, selectedProfId, selectedCustomerId, statusFilter, dateRange]);
+
+  // Comissões filtradas pelo período selecionado
+  const filteredCommissions = useMemo(() => {
+    return commissions.filter((c) => {
+      const commDate = c.sale_date || c.created_at;
+      return isDateInRange(commDate, dateRange);
+    });
+  }, [commissions, dateRange]);
 
   // --- DADOS PARA OS GRÁFICOS ---
 
@@ -130,8 +147,37 @@ export default function RelatoriosPage() {
       }));
   }, [products]);
 
-  // 3. Gráficos de Clientes
+  // 3. Gráficos de Clientes (respeitando o período selecionado para compras do período)
   const topCustomersChart = useMemo(() => {
+    const custMap = new Map<string, { name: string; total: number; pedidos: number }>();
+    customers.forEach((c) => {
+      custMap.set(c.id, {
+        name: c.name.length > 18 ? c.name.slice(0, 18) + '...' : c.name,
+        total: 0,
+        pedidos: 0,
+      });
+    });
+
+    const completed = filteredSales.filter((s) => s.status === 'COMPLETED');
+    completed.forEach((s) => {
+      const cId = s.customer_id || s.customer?.id;
+      if (cId) {
+        const existing = custMap.get(cId) || {
+          name: (s.customer?.name || 'Cliente').slice(0, 18),
+          total: 0,
+          pedidos: 0,
+        };
+        existing.total += s.total;
+        existing.pedidos += 1;
+        custMap.set(cId, existing);
+      }
+    });
+
+    const activeList = Array.from(custMap.values()).filter((c) => c.total > 0);
+    if (activeList.length > 0) {
+      return activeList.sort((a, b) => b.total - a.total).slice(0, 6);
+    }
+
     return [...customers]
       .sort((a, b) => (b.total_purchased || 0) - (a.total_purchased || 0))
       .slice(0, 6)
@@ -140,7 +186,7 @@ export default function RelatoriosPage() {
         total: c.total_purchased || 0,
         pedidos: c.orders_count || 0,
       }));
-  }, [customers]);
+  }, [customers, filteredSales]);
 
   const customersByTypeChart = useMemo(() => {
     const pfCount = customers.filter((c) => c.type === 'PF').length;
@@ -151,27 +197,58 @@ export default function RelatoriosPage() {
     ];
   }, [customers]);
 
-  // 4. Gráficos de Profissionais (Vendas e Comissões)
+  // 4. Gráficos de Profissionais (Vendas e Comissões calculadas no período selecionado)
   const profPerformanceChart = useMemo(() => {
-    return professionals.map((p) => ({
-      name: p.name.split(' ')[0],
-      vendas: p.total_sales || 0,
-      comissaoTotal: p.commission_earned || 0,
-      comissaoPaga: p.commission_paid || 0,
-      comissaoPendente: p.commission_pending || 0,
-    }));
-  }, [professionals]);
+    const profMap = new Map<string, { name: string; vendas: number; comissaoTotal: number; comissaoPaga: number; comissaoPendente: number }>();
 
-  // 5. Gráficos Financeiros
+    professionals.forEach((p) => {
+      profMap.set(p.id, {
+        name: p.name.split(' ')[0],
+        vendas: 0,
+        comissaoTotal: 0,
+        comissaoPaga: 0,
+        comissaoPendente: 0,
+      });
+    });
+
+    const completed = filteredSales.filter((s) => s.status === 'COMPLETED');
+    completed.forEach((s) => {
+      const pId = s.professional_id || s.professional?.id;
+      if (pId) {
+        const existing = profMap.get(pId) || {
+          name: (s.professional?.name || 'Vendedor').split(' ')[0],
+          vendas: 0,
+          comissaoTotal: 0,
+          comissaoPaga: 0,
+          comissaoPendente: 0,
+        };
+        existing.vendas += s.total;
+        existing.comissaoTotal += s.commission_total || 0;
+        profMap.set(pId, existing);
+      }
+    });
+
+    filteredCommissions.forEach((c) => {
+      const existing = profMap.get(c.professional_id);
+      if (existing) {
+        if (c.status === 'PAGA') {
+          existing.comissaoPaga += c.paid_amount || c.commission_amount;
+        } else if (c.status === 'PENDENTE' || c.status === 'APROVADA') {
+          existing.comissaoPendente += c.commission_amount;
+        }
+      }
+    });
+
+    return Array.from(profMap.values());
+  }, [professionals, filteredSales, filteredCommissions]);
+
+  // 5. Gráficos Financeiros (baseados no período canônico)
   const financialMetricsChart = useMemo(() => {
-    const completed = sales.filter((s) => s.status === 'COMPLETED');
+    const completed = filteredSales.filter((s) => s.status === 'COMPLETED');
     const grossRevenue = completed.reduce((acc, s) => acc + (s.subtotal || s.total), 0);
     const totalDiscounts = completed.reduce((acc, s) => acc + (s.discount || 0), 0);
     const netRevenue = completed.reduce((acc, s) => acc + s.total, 0);
-    const totalComms = commissions.reduce((acc, c) => acc + c.commission_amount, 0);
-    const paidComms = commissions
-      .filter((c) => c.status === 'PAGA')
-      .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
+    const totalComms = filteredCommissions.reduce((acc, c) => acc + c.commission_amount, 0);
     const netProfit = netRevenue - totalComms;
 
     return [
@@ -181,16 +258,16 @@ export default function RelatoriosPage() {
       { name: 'Comissões da Equipe', valor: totalComms, fill: '#f59e0b' },
       { name: 'Saldo Pós-Comissões', valor: netProfit, fill: '#059669' },
     ];
-  }, [sales, commissions]);
+  }, [filteredSales, filteredCommissions]);
 
   const commissionsStatusPie = useMemo(() => {
-    const pending = commissions
+    const pending = filteredCommissions
       .filter((c) => c.status === 'PENDENTE')
       .reduce((acc, c) => acc + c.commission_amount, 0);
-    const approved = commissions
+    const approved = filteredCommissions
       .filter((c) => c.status === 'APROVADA')
       .reduce((acc, c) => acc + c.commission_amount, 0);
-    const paid = commissions
+    const paid = filteredCommissions
       .filter((c) => c.status === 'PAGA')
       .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
 
@@ -199,7 +276,7 @@ export default function RelatoriosPage() {
       { name: 'Aprovadas', value: approved, color: '#3b82f6' },
       { name: 'Pendentes', value: pending, color: '#f59e0b' },
     ].filter((item) => item.value > 0);
-  }, [commissions]);
+  }, [filteredCommissions]);
 
   // Exportação para Excel (.xlsx) e CSV
   const handleExport = (fileType: 'xlsx' | 'csv') => {
@@ -271,18 +348,19 @@ export default function RelatoriosPage() {
         'Status': p.active ? 'ATIVO' : 'INATIVO',
       }));
     } else {
-      // Financeiro
-      sheetName = 'Relatório Financeiro';
-      const completed = sales.filter((s) => s.status === 'COMPLETED');
+      // Financeiro (respeitando o período selecionado)
+      sheetName = `Relatório Financeiro (${dateRange.label})`;
+      const completed = filteredSales.filter((s) => s.status === 'COMPLETED');
       const grossRevenue = completed.reduce((acc, s) => acc + (s.subtotal || s.total), 0);
       const totalDiscounts = completed.reduce((acc, s) => acc + (s.discount || 0), 0);
       const netRevenue = completed.reduce((acc, s) => acc + s.total, 0);
-      const totalCommissions = commissions.reduce((acc, c) => acc + c.commission_amount, 0);
-      const paidCommissions = commissions
+      const totalCommissions = filteredCommissions.reduce((acc, c) => acc + c.commission_amount, 0);
+      const paidCommissions = filteredCommissions
         .filter((c) => c.status === 'PAGA')
         .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
 
       dataToExport = [
+        { 'Indicador Financeiro': 'Período Selecionado', 'Valor (R$)': dateRange.label },
         { 'Indicador Financeiro': 'Faturamento Bruto', 'Valor (R$)': grossRevenue.toFixed(2) },
         { 'Indicador Financeiro': 'Total de Descontos Concedidos', 'Valor (R$)': totalDiscounts.toFixed(2) },
         { 'Indicador Financeiro': 'Faturamento Líquido das Vendas', 'Valor (R$)': netRevenue.toFixed(2) },
@@ -300,9 +378,14 @@ export default function RelatoriosPage() {
     XLSX.writeFile(wb, filename);
   };
 
-  const totalSalesRevenue = sales
-    .filter((s) => s.status === 'COMPLETED')
-    .reduce((acc, s) => acc + s.total, 0);
+  const completedPeriodSales = filteredSales.filter((s) => s.status === 'COMPLETED');
+  const totalSalesRevenue = completedPeriodSales.reduce((acc, s) => acc + s.total, 0);
+  const totalGrossRevenue = completedPeriodSales.reduce((acc, s) => acc + (s.subtotal || s.total), 0);
+  const totalDiscountsAmount = completedPeriodSales.reduce((acc, s) => acc + (s.discount || 0), 0);
+  const totalCommissionsAmount = filteredCommissions.reduce((acc, c) => acc + c.commission_amount, 0);
+  const totalPaidCommissionsAmount = filteredCommissions
+    .filter((c) => c.status === 'PAGA')
+    .reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -483,6 +566,38 @@ export default function RelatoriosPage() {
             </div>
           </button>
         )}
+      </div>
+
+      {/* Barra Global de Período dos Relatórios */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-slate-500" />
+          <span className="text-xs font-bold text-slate-700">Período de Análise ({dateRange.label}):</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+          {[
+            { id: 'today', label: 'Hoje' },
+            { id: '7d', label: '7 Dias' },
+            { id: '30d', label: '30 Dias' },
+            { id: 'month', label: 'Este Mês' },
+            { id: 'last_month', label: 'Mês Passado' },
+            { id: 'year', label: 'Este Ano' },
+            { id: 'all', label: 'Todo Período' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setPeriod(item.id as StandardPeriod)}
+              className={`px-3 py-1.5 rounded-xl transition-all ${
+                period === item.id
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Barra de Filtros (Quando categoria for Vendas) */}
@@ -1012,13 +1127,13 @@ export default function RelatoriosPage() {
                   <tr>
                     <td className="p-3 font-semibold text-slate-800">Faturamento Bruto de Vendas</td>
                     <td className="p-3 text-right font-bold text-slate-900">
-                      {formatCurrency(sales.filter((s) => s.status === 'COMPLETED').reduce((acc, s) => acc + (s.subtotal || s.total), 0))}
+                      {formatCurrency(totalGrossRevenue)}
                     </td>
                   </tr>
                   <tr>
                     <td className="p-3 font-semibold text-slate-800">Descontos Comerciais Aplicados</td>
                     <td className="p-3 text-right font-bold text-red-600">
-                      - {formatCurrency(sales.filter((s) => s.status === 'COMPLETED').reduce((acc, s) => acc + (s.discount || 0), 0))}
+                      - {formatCurrency(totalDiscountsAmount)}
                     </td>
                   </tr>
                   <tr>
@@ -1030,19 +1145,19 @@ export default function RelatoriosPage() {
                   <tr>
                     <td className="p-3 font-semibold text-slate-800">Comissões de Profissionais Geradas</td>
                     <td className="p-3 text-right font-bold text-amber-600">
-                      {formatCurrency(commissions.reduce((acc, c) => acc + c.commission_amount, 0))}
+                      {formatCurrency(totalCommissionsAmount)}
                     </td>
                   </tr>
                   <tr>
                     <td className="p-3 font-semibold text-slate-800">Comissões Quitadas</td>
                     <td className="p-3 text-right font-bold text-emerald-600">
-                      {formatCurrency(commissions.filter((c) => c.status === 'PAGA').reduce((acc, c) => acc + (c.paid_amount || c.commission_amount), 0))}
+                      {formatCurrency(totalPaidCommissionsAmount)}
                     </td>
                   </tr>
                   <tr className="bg-emerald-50/40">
                     <td className="p-3 font-bold text-emerald-950">Saldo Operacional Líquido Comercial</td>
                     <td className="p-3 text-right font-black text-emerald-800 text-sm">
-                      {formatCurrency(totalSalesRevenue - commissions.reduce((acc, c) => acc + c.commission_amount, 0))}
+                      {formatCurrency(totalSalesRevenue - totalCommissionsAmount)}
                     </td>
                   </tr>
                 </tbody>

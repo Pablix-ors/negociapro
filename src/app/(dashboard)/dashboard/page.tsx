@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useData } from '@/context/DataContext';
 import { formatCurrency, formatDate } from '@/lib/formatters';
+import { getDateRange, isDateInRange, getLocalDateString, getDaysInRange, StandardPeriod } from '@/lib/dateUtils';
 import {
   TrendingUp,
   ShoppingCart,
@@ -35,7 +36,7 @@ const ResponsiveContainer = nextDynamic(() => import('recharts').then((mod) => m
 
 export default function DashboardPage() {
   const { sales = [], customers = [], products = [], professionals = [], commissions = [] } = useData();
-  const [period, setPeriod] = useState<'7d' | '30d' | 'mes' | 'ano'>('30d');
+  const [period, setPeriod] = useState<StandardPeriod>('30d');
   const [isMounted, setIsMounted] = useState(false);
 
   React.useEffect(() => {
@@ -48,66 +49,266 @@ export default function DashboardPage() {
   const safeProfessionals = Array.isArray(professionals) ? professionals.filter(Boolean) : [];
   const safeCommissions = Array.isArray(commissions) ? commissions.filter(Boolean) : [];
 
-  // Cálculos de métricas
-  const completedSales = safeSales.filter((s) => s.status === 'COMPLETED');
-  const totalRevenue = completedSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
-  const completedSalesCount = completedSales.length;
+  // Obter intervalo canônico selecionado
+  const dateRange = React.useMemo(() => {
+    return getDateRange(period);
+  }, [period]);
+
+  // Vendas COMPLETED estritamente válidas dentro do período
+  const periodCompletedSales = React.useMemo(() => {
+    return safeSales.filter((s) => {
+      if (s.status !== 'COMPLETED') return false;
+      const saleDate = s.sold_at || s.created_at;
+      return isDateInRange(saleDate, dateRange);
+    });
+  }, [safeSales, dateRange]);
+
+  // Comissões estritamente válidas no período (baseadas na data da venda/comissão)
+  const periodCommissions = React.useMemo(() => {
+    return safeCommissions.filter((c) => {
+      const commDate = c.sale_date || c.created_at;
+      return isDateInRange(commDate, dateRange);
+    });
+  }, [safeCommissions, dateRange]);
+
+  // Cálculos de KPIs Principais
+  const totalRevenue = React.useMemo(() => {
+    return periodCompletedSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+  }, [periodCompletedSales]);
+
+  const completedSalesCount = periodCompletedSales.length;
   const avgTicket = completedSalesCount > 0 ? totalRevenue / completedSalesCount : 0;
-  const activeCustomersCount = safeCustomers.filter((c) => c.active).length;
 
-  // Métricas de Comissões
-  const pendingCommissionsTotal = safeCommissions
-    .filter((c) => c.status === 'PENDENTE')
-    .reduce((acc, c) => acc + (Number(c.commission_amount) || 0), 0);
-  const paidCommissionsTotal = safeCommissions
-    .filter((c) => c.status === 'PAGA')
-    .reduce((acc, c) => acc + (Number(c.paid_amount) || Number(c.commission_amount) || 0), 0);
+  // Clientes que compraram no período e clientes ativos da carteira
+  const activeCustomersInPeriod = React.useMemo(() => {
+    const custIds = new Set<string>();
+    periodCompletedSales.forEach((s) => {
+      if (s.customer_id) custIds.add(s.customer_id);
+      else if (s.customer?.id) custIds.add(s.customer.id);
+    });
+    return custIds.size;
+  }, [periodCompletedSales]);
 
-  // Dados para Gráfico de Vendas
-  const chartData = React.useMemo(() => {
-    return safeSales.length > 0
-      ? [
-          { name: '10/09', total: safeSales.length > 2 ? 5475 : Math.round(totalRevenue * 0.3) },
-          { name: '11/09', total: safeSales.length > 2 ? 2100 : Math.round(totalRevenue * 0.2) },
-          { name: '12/09', total: safeSales.length > 2 ? 1316 : Math.round(totalRevenue * 0.1) },
-          { name: '13/09', total: safeSales.length > 2 ? 4200 : Math.round(totalRevenue * 0.4) },
-          { name: '14/09', total: safeSales.length > 2 ? 3890 : Math.round(totalRevenue * 0.2) },
-          { name: '15/09', total: totalRevenue > 0 ? totalRevenue : 0 },
-        ]
-      : [
-          { name: 'Seg', total: 0 },
-          { name: 'Ter', total: 0 },
-          { name: 'Qua', total: 0 },
-          { name: 'Qui', total: 0 },
-          { name: 'Sex', total: 0 },
-          { name: 'Hoje', total: 0 },
-        ];
-  }, [safeSales.length, totalRevenue]);
-
-  // Gráfico: Vendas por Profissional
-  const professionalChartData = React.useMemo(() => {
-    return safeProfessionals.map((p) => ({
-      name: (p.name || 'Profissional').split(' ')[0],
-      total: Number(p.total_sales) || 0,
-      comissao: Number(p.commission_earned) || 0,
-    }));
-  }, [safeProfessionals]);
-
-  // Ranking: Top Clientes Mais Valiosos
-  const topCustomers = React.useMemo(() => {
-    return [...safeCustomers]
-      .filter((c) => c && typeof c === 'object')
-      .sort((a, b) => (Number(b.total_purchased) || 0) - (Number(a.total_purchased) || 0))
-      .slice(0, 5);
+  const totalRegisteredActiveCustomers = React.useMemo(() => {
+    return safeCustomers.filter((c) => c.active).length;
   }, [safeCustomers]);
 
-  // Ranking: Produtos Mais Vendidos / Destaque
+  // Métricas de Comissões no Período
+  const pendingCommissionsTotal = React.useMemo(() => {
+    return periodCommissions
+      .filter((c) => c.status === 'PENDENTE' || c.status === 'APROVADA')
+      .reduce((acc, c) => acc + (Number(c.commission_amount) || 0), 0);
+  }, [periodCommissions]);
+
+  const paidCommissionsTotal = React.useMemo(() => {
+    return periodCommissions
+      .filter((c) => c.status === 'PAGA')
+      .reduce((acc, c) => acc + (Number(c.paid_amount) || Number(c.commission_amount) || 0), 0);
+  }, [periodCommissions]);
+
+  // 1. Gráfico Real: Evolução do Faturamento Diário no Período Selecionado
+  const chartData = React.useMemo(() => {
+    const days = getDaysInRange(dateRange);
+    const dayMap = new Map<string, number>();
+    days.forEach((d) => dayMap.set(d.dateKey, 0));
+
+    periodCompletedSales.forEach((s) => {
+      const sDateStr = getLocalDateString(s.sold_at || s.created_at);
+      if (dayMap.has(sDateStr)) {
+        dayMap.set(sDateStr, (dayMap.get(sDateStr) || 0) + (Number(s.total) || 0));
+      }
+    });
+
+    return days.map((d) => ({
+      name: d.displayDate,
+      dateKey: d.dateKey,
+      total: Number((dayMap.get(d.dateKey) || 0).toFixed(2)),
+    }));
+  }, [dateRange, periodCompletedSales]);
+
+  // 2. Gráfico Real: Vendas por Profissional no Período Selecionado
+  const professionalChartData = React.useMemo(() => {
+    const profMap = new Map<string, { name: string; total: number; comissao: number }>();
+
+    // Inicializar profissionais cadastrados
+    safeProfessionals.forEach((p) => {
+      profMap.set(p.id, {
+        name: (p.name || 'Profissional').split(' ')[0],
+        total: 0,
+        comissao: 0,
+      });
+    });
+
+    // Somar vendas do período
+    periodCompletedSales.forEach((s) => {
+      const pId = s.professional_id || s.professional?.id;
+      if (pId) {
+        const existing = profMap.get(pId) || {
+          name: (s.professional?.name || 'Vendedor').split(' ')[0],
+          total: 0,
+          comissao: 0,
+        };
+        existing.total += Number(s.total) || 0;
+        existing.comissao += Number(s.commission_total) || 0;
+        profMap.set(pId, existing);
+      }
+    });
+
+    const list = Array.from(profMap.values());
+    // Se tiver dados com vendas, ordenar decrescente; caso contrário mostrar equipe
+    return list.sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [safeProfessionals, periodCompletedSales]);
+
+  // 3. Ranking Real: Top Clientes Mais Valiosos no Período Selecionado
+  const topCustomers = React.useMemo(() => {
+    const custMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        trade_name?: string | null;
+        type?: string;
+        city?: string;
+        state?: string;
+        total_purchased: number;
+        orders_count: number;
+      }
+    >();
+
+    // Agrupar compras reais das vendas concluídas do período
+    periodCompletedSales.forEach((s) => {
+      const cId = s.customer_id || s.customer?.id || (s.customer?.document ? `doc-${s.customer.document}` : null);
+      if (!cId) return;
+
+      const custObj = s.customer || safeCustomers.find((c) => c.id === cId || (c.document && c.document === s.customer?.document));
+
+      const existing = custMap.get(cId) || {
+        id: cId,
+        name: custObj?.name || 'Cliente Identificado',
+        trade_name: custObj?.trade_name || null,
+        type: custObj?.type || 'PF',
+        city: custObj?.city || '',
+        state: custObj?.state || '',
+        total_purchased: 0,
+        orders_count: 0,
+      };
+
+      existing.total_purchased += Number(s.total) || 0;
+      existing.orders_count += 1;
+      custMap.set(cId, existing);
+    });
+
+    const activeInPeriod = Array.from(custMap.values())
+      .filter((c) => c.total_purchased > 0)
+      .sort((a, b) => b.total_purchased - a.total_purchased);
+
+    // Se houver clientes com compras no período, exibi-los
+    if (activeInPeriod.length > 0) {
+      return activeInPeriod.slice(0, 5);
+    }
+
+    // Caso a empresa não tenha vendas no período específico, listar clientes cadastrados
+    return [...safeCustomers]
+      .filter((c) => c && typeof c === 'object')
+      .slice(0, 5)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        trade_name: c.trade_name,
+        type: c.type,
+        city: c.city,
+        state: c.state,
+        total_purchased: 0,
+        orders_count: 0,
+      }));
+  }, [periodCompletedSales, safeCustomers]);
+
+  // 4. Ranking Real: Produtos em Destaque Comercial baseados no faturamento do período
   const topProducts = React.useMemo(() => {
+    const prodMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        sku?: string | null;
+        image_url?: string | null;
+        unit?: string | null;
+        current_stock: number;
+        selling_price: number;
+        revenueInPeriod: number;
+        qtySoldInPeriod: number;
+        commission_type?: string | null;
+        commission_value?: number;
+      }
+    >();
+
+    // Inicializar catálogo de produtos
+    safeProducts.forEach((p) => {
+      prodMap.set(p.id, {
+        id: p.id,
+        name: p.name,
+        sku: p.sku ?? null,
+        image_url: p.image_url ?? null,
+        unit: p.unit ?? 'UN',
+        current_stock: p.current_stock ?? 0,
+        selling_price: p.selling_price ?? 0,
+        revenueInPeriod: 0,
+        qtySoldInPeriod: 0,
+        commission_type: p.commission_type ?? 'NONE',
+        commission_value: p.commission_value ?? 0,
+      });
+    });
+
+    // Somar itens das vendas concluídas do período
+    periodCompletedSales.forEach((s) => {
+      (s.items || []).forEach((it: any) => {
+        const pId = it.product_id || it.product?.id;
+        if (!pId) return;
+
+        const prodObj = it.product || prodMap.get(pId);
+        const existing = prodMap.get(pId) || {
+          id: pId,
+          name: prodObj?.name || 'Produto',
+          sku: prodObj?.sku || '',
+          image_url: prodObj?.image_url || null,
+          unit: prodObj?.unit || 'UN',
+          current_stock: prodObj?.current_stock ?? 0,
+          selling_price: Number(it.unit_price) || prodObj?.selling_price || 0,
+          revenueInPeriod: 0,
+          qtySoldInPeriod: 0,
+          commission_type: prodObj?.commission_type || 'NONE',
+          commission_value: prodObj?.commission_value || 0,
+        };
+
+        existing.revenueInPeriod += Number(it.total) || 0;
+        existing.qtySoldInPeriod += Number(it.quantity) || 1;
+        prodMap.set(pId, existing);
+      });
+    });
+
+    const soldProducts = Array.from(prodMap.values()).filter((p) => p.revenueInPeriod > 0);
+    if (soldProducts.length > 0) {
+      return soldProducts.sort((a, b) => b.revenueInPeriod - a.revenueInPeriod).slice(0, 5);
+    }
+
+    // Se nenhum item foi vendido no período, mostrar catálogo mais relevante
     return [...safeProducts]
       .filter((p) => p && typeof p === 'object' && p.id)
-      .sort((a, b) => (Number(b.selling_price) || 0) - (Number(a.selling_price) || 0))
-      .slice(0, 5);
-  }, [safeProducts]);
+      .slice(0, 5)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        image_url: p.image_url,
+        unit: p.unit,
+        current_stock: p.current_stock,
+        selling_price: p.selling_price,
+        revenueInPeriod: 0,
+        qtySoldInPeriod: 0,
+        commission_type: p.commission_type,
+        commission_value: p.commission_value,
+      }));
+  }, [safeProducts, periodCompletedSales]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -127,9 +328,18 @@ export default function DashboardPage() {
           <div className="inline-flex rounded-xl bg-slate-200/80 p-1 text-xs font-semibold text-slate-600">
             <button
               type="button"
+              onClick={() => setPeriod('today')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                period === 'today' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
+              }`}
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
               onClick={() => setPeriod('7d')}
               className={`px-3 py-1 rounded-lg transition-all ${
-                period === '7d' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'
+                period === '7d' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
               }`}
             >
               7 Dias
@@ -138,19 +348,37 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setPeriod('30d')}
               className={`px-3 py-1 rounded-lg transition-all ${
-                period === '30d' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'
+                period === '30d' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
               }`}
             >
               30 Dias
             </button>
             <button
               type="button"
-              onClick={() => setPeriod('mes')}
+              onClick={() => setPeriod('month')}
               className={`px-3 py-1 rounded-lg transition-all ${
-                period === 'mes' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'
+                period === 'month' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
               }`}
             >
               Este Mês
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('last_month')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                period === 'last_month' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
+              }`}
+            >
+              Mês Passado
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('all')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                period === 'all' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
+              }`}
+            >
+              Tudo
             </button>
           </div>
 
@@ -181,7 +409,7 @@ export default function DashboardPage() {
               {formatCurrency(totalRevenue)}
             </span>
             <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
-              +18.4% no mês
+              {dateRange.label}
             </span>
           </div>
         </div>
@@ -201,7 +429,7 @@ export default function DashboardPage() {
               {completedSalesCount} pedidos
             </span>
             <span className="text-[10px] text-blue-600 font-semibold block mt-0.5">
-              100% faturadas
+              Faturadas no período
             </span>
           </div>
         </div>
@@ -238,10 +466,10 @@ export default function DashboardPage() {
           </div>
           <div className="mt-2">
             <span className="text-lg font-black text-slate-900 tracking-tight block">
-              {activeCustomersCount} clientes
+              {activeCustomersInPeriod > 0 ? `${activeCustomersInPeriod} compradores` : `${totalRegisteredActiveCustomers} ativos`}
             </span>
             <span className="text-[10px] text-cyan-600 font-semibold block mt-0.5">
-              Carteira monitorada
+              {activeCustomersInPeriod > 0 ? `Compraram (${dateRange.label})` : 'Carteira ativa'}
             </span>
           </div>
         </div>
@@ -387,7 +615,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Top Clientes Mais Valiosos</h3>
-              <p className="text-xs text-slate-500">Clientes com maior volume acumulado de compras</p>
+              <p className="text-xs text-slate-500">Volume de compras apurado ({dateRange.label})</p>
             </div>
             <Link href="/clientes" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
               Ver todos →
@@ -437,7 +665,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Produtos em Destaque Comercial</h3>
-              <p className="text-xs text-slate-500">Itens com maior valor agregado e margem</p>
+              <p className="text-xs text-slate-500">Itens com maior faturamento e giro ({dateRange.label})</p>
             </div>
             <Link href="/produtos" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
               Catálogo →
