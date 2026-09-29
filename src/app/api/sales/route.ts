@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const customerId = searchParams.get('customer_id');
+    const saleId = searchParams.get('id') || searchParams.get('sale_id');
 
     if (!companyId) {
       return NextResponse.json({ success: false, error: 'company_id é obrigatório' }, { status: 400 });
@@ -29,6 +30,10 @@ export async function GET(request: Request) {
       .from('sales')
       .select('*, customer:customers(*), professional:professionals(*), seller:profiles(*)')
       .eq('company_id', companyId);
+
+    if (saleId) {
+      query = query.eq('id', saleId);
+    }
 
     if (customerId) {
       query = query.eq('customer_id', customerId);

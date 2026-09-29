@@ -55,6 +55,11 @@ interface CartItem {
   commission_type_snapshot: 'NONE' | 'PERCENTAGE' | 'FIXED';
   commission_value_snapshot: number;
   commission_amount: number;
+  name?: string;
+  brand?: string;
+  sku?: string;
+  unit?: string;
+  current_stock?: number;
 }
 
 function NovaVendaForm() {
@@ -65,7 +70,7 @@ function NovaVendaForm() {
   const quoteIdParam = searchParams.get('orcamento_id') || '';
 
   const { customers, products, professionals, sales, createSale, convertQuoteToSale } = useData();
-  const { user } = useAuth();
+  const { user, company } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isGerente = user?.role === 'GERENTE';
   const canAuthorizeBelowMinPrice = isAdmin || isGerente;
@@ -191,59 +196,94 @@ function NovaVendaForm() {
 
   // 2. Carregar produtos APENAS quando explicitamente solicitado (Orçamento ou Repetir Venda)
   useEffect(() => {
-    if (products.length === 0 || sales.length === 0 || initializedRef.current) return;
+    if (initializedRef.current) return;
 
     // Se veio um ID de orçamento para reabrir/finalizar
     if (quoteIdParam) {
-      const quoteSale = sales.find((s) => s.id === quoteIdParam);
-      if (quoteSale && quoteSale.items && quoteSale.items.length > 0) {
-        if (quoteSale.customer_id) {
-          setSelectedCustomerId(quoteSale.customer_id);
+      const applyQuoteData = (targetQuote: any) => {
+        if (!targetQuote || !Array.isArray(targetQuote.items) || targetQuote.items.length === 0) return false;
+
+        if (targetQuote.customer_id) {
+          setSelectedCustomerId(targetQuote.customer_id);
           setIsGuestSale(false);
         } else {
           setIsGuestSale(true);
         }
-        if (quoteSale.professional_id) {
-          setSelectedProfessionalId(quoteSale.professional_id);
+        if (targetQuote.professional_id) {
+          setSelectedProfessionalId(targetQuote.professional_id);
         }
-        if (quoteSale.notes) {
-          setNotes(quoteSale.notes);
+        if (targetQuote.notes) {
+          setNotes(targetQuote.notes);
         }
-        if (quoteSale.payment_method_name) {
-          setPaymentMethod(quoteSale.payment_method_name);
+        if (targetQuote.payment_method_name) {
+          setPaymentMethod(targetQuote.payment_method_name);
         }
 
-        const restoredItems: CartItem[] = quoteSale.items
-          .map((item) => {
-            const prod = products.find((p) => p.id === item.product_id);
-            if (!prod) return null;
+        const restoredItems: CartItem[] = targetQuote.items
+          .map((item: any) => {
+            const prod = products.find((p) => p.id === item.product_id) || item.product;
             return {
               product_id: item.product_id,
               quantity: item.quantity,
               unit_price: item.unit_price,
-              discount: item.discount,
-              total: item.total,
-              commission_type_snapshot: item.commission_type_snapshot || prod.commission_type || 'NONE',
-              commission_value_snapshot: item.commission_value_snapshot ?? prod.commission_value ?? 0,
+              discount: item.discount || 0,
+              total: item.total || item.quantity * item.unit_price,
+              commission_type_snapshot: item.commission_type_snapshot || prod?.commission_type || 'NONE',
+              commission_value_snapshot: item.commission_value_snapshot ?? prod?.commission_value ?? 0,
               commission_amount: item.commission_amount || 0,
+              name: prod?.name,
+              brand: prod?.brand,
+              sku: prod?.sku,
+              unit: prod?.unit,
+              current_stock: prod?.current_stock,
             };
           })
           .filter(Boolean) as CartItem[];
 
         if (restoredItems.length > 0) {
           setCartItems(restoredItems);
-          setAutoLoadedNotice(`Orçamento #${quoteSale.sale_number} carregado no PDV. Você pode editar itens ou convertê-lo em venda final.`);
+          setAutoLoadedNotice(
+            `Orçamento #${targetQuote.sale_number} carregado com sucesso (${restoredItems.length} itens). Você pode editar ou finalizar a venda.`
+          );
+          initializedRef.current = true;
+          return true;
         }
-        initializedRef.current = true;
+        return false;
+      };
+
+      // Tenta encontrar nas vendas já carregadas
+      const quoteSale = sales.find((s) => s.id === quoteIdParam);
+      if (quoteSale && quoteSale.items && quoteSale.items.length > 0) {
+        applyQuoteData(quoteSale);
         return;
       }
+
+      // Se ainda não achou ou itens vieram vazios, busca diretamente da API
+      const compId = company?.id || (typeof window !== 'undefined' ? (() => {
+        try {
+          const c = localStorage.getItem('negociapro_company');
+          return c ? JSON.parse(c)?.id : '';
+        } catch { return ''; }
+      })() : '');
+
+      if (compId) {
+        fetch(`/api/sales?company_id=${compId}&id=${quoteIdParam}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.success && Array.isArray(data.sales) && data.sales.length > 0) {
+              applyQuoteData(data.sales[0]);
+            }
+          })
+          .catch((err) => console.warn('[NovaVenda] Erro ao buscar orçamento direto da API:', err));
+      }
+      return;
     }
 
     // Se o usuário clicou explicitamente em "Iniciar nova venda repetindo itens deste pedido"
     if (repeatSaleIdParam) {
-      const targetSale = sales.find((s) => s.id === repeatSaleIdParam);
+      const applyRepeatData = (targetSale: any) => {
+        if (!targetSale || !Array.isArray(targetSale.items) || targetSale.items.length === 0) return false;
 
-      if (targetSale && targetSale.items && targetSale.items.length > 0) {
         if (targetSale.customer_id) {
           setSelectedCustomerId(targetSale.customer_id);
           setIsGuestSale(false);
@@ -253,19 +293,22 @@ function NovaVendaForm() {
         }
 
         const restoredItems: CartItem[] = targetSale.items
-          .map((item) => {
-            const prod = products.find((p) => p.id === item.product_id);
-            if (!prod) return null;
-
+          .map((item: any) => {
+            const prod = products.find((p) => p.id === item.product_id) || item.product;
             return {
               product_id: item.product_id,
               quantity: item.quantity,
               unit_price: item.unit_price,
-              discount: item.discount,
-              total: item.total,
-              commission_type_snapshot: item.commission_type_snapshot || prod.commission_type || 'NONE',
-              commission_value_snapshot: item.commission_value_snapshot ?? prod.commission_value ?? 0,
+              discount: item.discount || 0,
+              total: item.total || item.quantity * item.unit_price,
+              commission_type_snapshot: item.commission_type_snapshot || prod?.commission_type || 'NONE',
+              commission_value_snapshot: item.commission_value_snapshot ?? prod?.commission_value ?? 0,
               commission_amount: item.commission_amount || 0,
+              name: prod?.name,
+              brand: prod?.brand,
+              sku: prod?.sku,
+              unit: prod?.unit,
+              current_stock: prod?.current_stock,
             };
           })
           .filter(Boolean) as CartItem[];
@@ -274,19 +317,45 @@ function NovaVendaForm() {
           setCartItems(restoredItems);
           const firstProdId = restoredItems[0].product_id;
           setSelectedProductId(firstProdId);
-          const prodObj = products.find((p) => p.id === firstProdId);
+          const prodObj = products.find((p) => p.id === firstProdId) || targetSale.items[0]?.product;
           if (prodObj) {
-            setUnitPrice(prodObj.selling_price);
+            setUnitPrice(prodObj.selling_price || restoredItems[0].unit_price);
           }
           setAutoLoadedNotice(
             `Produtos carregados da negociação anterior (Pedido #${targetSale.sale_number}). Você pode editar os itens ou adicionar novos produtos.`
           );
+          initializedRef.current = true;
+          return true;
         }
-      }
-    }
+        return false;
+      };
 
-    initializedRef.current = true;
-  }, [selectedCustomerId, products, sales, repeatSaleIdParam, quoteIdParam, isGuestSale]);
+      const targetSale = sales.find((s) => s.id === repeatSaleIdParam);
+      if (targetSale && targetSale.items && targetSale.items.length > 0) {
+        applyRepeatData(targetSale);
+        return;
+      }
+
+      const compId = company?.id || (typeof window !== 'undefined' ? (() => {
+        try {
+          const c = localStorage.getItem('negociapro_company');
+          return c ? JSON.parse(c)?.id : '';
+        } catch { return ''; }
+      })() : '');
+
+      if (compId) {
+        fetch(`/api/sales?company_id=${compId}&id=${repeatSaleIdParam}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.success && Array.isArray(data.sales) && data.sales.length > 0) {
+              applyRepeatData(data.sales[0]);
+            }
+          })
+          .catch((err) => console.warn('[NovaVenda] Erro ao buscar pedido repetido direto da API:', err));
+      }
+      return;
+    }
+  }, [selectedCustomerId, products, sales, repeatSaleIdParam, quoteIdParam, isGuestSale, company?.id]);
 
   // Sincronizar seleção do profissional
   useEffect(() => {
@@ -827,7 +896,7 @@ function NovaVendaForm() {
                   {isGuestSale ? (
                     <div>
                       <div className="flex items-center space-x-2">
-                        <h2 className="text-sm sm:text-base font-bold text-slate-900 truncate">
+                        <h2 className="text-sm sm:text-base font-bold text-slate-900">
                           Consumidor Final (Sem Cliente)
                         </h2>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
@@ -840,12 +909,21 @@ function NovaVendaForm() {
                     </div>
                   ) : currentCustomer ? (
                     <div>
-                      <h2 className="text-sm sm:text-base font-bold text-slate-900 truncate">
+                      <h2 className="text-sm sm:text-base font-bold text-slate-900 break-words leading-snug">
                         {currentCustomer.trade_name ? `${currentCustomer.trade_name} (${currentCustomer.name})` : currentCustomer.name}
                       </h2>
-                      <p className="text-xs text-slate-500 mt-0.5 truncate">
-                        {currentCustomer.document ? `CPF/CNPJ ${currentCustomer.document}` : 'Sem documento'}
-                        {currentCustomer.city ? ` • ${currentCustomer.city} / ${currentCustomer.state || 'UF'}` : ''}
+                      <p className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-1.5 font-medium">
+                        {currentCustomer.document && (
+                          <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 text-[11px] font-mono">
+                            {currentCustomer.document}
+                          </span>
+                        )}
+                        {currentCustomer.city && (
+                          <span>• {currentCustomer.city}{currentCustomer.state ? ` / ${currentCustomer.state}` : ''}</span>
+                        )}
+                        {currentCustomer.phone && (
+                          <span className="text-slate-400">• {currentCustomer.phone}</span>
+                        )}
                       </p>
                     </div>
                   ) : (
@@ -895,7 +973,7 @@ function NovaVendaForm() {
 
                   {/* Dropdown com Busca e Opções */}
                     {isCustomerDropdownOpen && (
-                      <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-3 animate-in fade-in zoom-in-95 space-y-2">
+                      <div className="absolute right-0 sm:right-auto sm:left-0 xl:left-auto xl:right-0 mt-2 w-[min(94vw,420px)] bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-3 animate-in fade-in zoom-in-95 space-y-2">
                         {/* Opções rápidas: Consumidor Final ou Novo Cliente */}
                         <div className="flex items-center gap-1.5 pb-2 border-b border-slate-100">
                           <button
@@ -929,13 +1007,13 @@ function NovaVendaForm() {
                             autoFocus
                             value={customerSearch}
                             onChange={(e) => setCustomerSearch(e.target.value)}
-                            placeholder="Buscar cliente..."
+                            placeholder="Buscar cliente por nome, fantasia, CPF/CNPJ..."
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
                           />
                         </div>
 
                         {/* Lista de Clientes */}
-                        <div className="max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-100">
+                        <div className="max-h-64 overflow-y-auto space-y-1 divide-y divide-slate-100">
                           {filteredCustomers.length === 0 ? (
                             <div className="py-4 text-center text-xs text-slate-400">
                               Nenhum cliente encontrado
@@ -952,19 +1030,19 @@ function NovaVendaForm() {
                                     handleCustomerChange(c.id);
                                     setIsCustomerDropdownOpen(false);
                                   }}
-                                  className={`w-full p-2 rounded-lg text-left flex items-center justify-between text-xs transition-colors ${
+                                  className={`w-full p-2.5 rounded-lg text-left flex items-center justify-between text-xs transition-colors ${
                                     isSelected ? 'bg-blue-50 text-blue-900 font-bold' : 'hover:bg-slate-50 text-slate-700'
                                   }`}
                                 >
-                                  <div className="truncate pr-2">
-                                    <span className="block truncate font-semibold">
+                                  <div className="pr-2 flex-1 min-w-0">
+                                    <span className="block font-semibold break-words leading-tight">
                                       {c.trade_name ? `${c.trade_name} (${c.name})` : c.name}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 block truncate">
-                                      {c.document || 'Sem doc'} • {c.city || 'Sem cidade'}
+                                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                                      {c.document ? `${c.document} ` : ''}{c.city ? `• ${c.city}${c.state ? `/${c.state}` : ''}` : ''}
                                     </span>
                                   </div>
-                                  {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                                  {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0 ml-2" />}
                                 </button>
                               );
                             })
@@ -1415,16 +1493,21 @@ function NovaVendaForm() {
                     <tbody className="divide-y divide-slate-100">
                       {cartItems.map((item, idx) => {
                         const prod = products.find((p) => p.id === item.product_id);
+                        const prodName = prod?.name || item.name || 'Produto';
+                        const prodBrand = prod?.brand || item.brand;
+                        const prodSku = prod?.sku || item.sku;
+                        const prodStock = prod ? `${prod.current_stock} ${prod.unit || 'un'}` : (item.current_stock !== undefined ? `${item.current_stock} ${item.unit || 'un'}` : '-');
+
                         return (
                           <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                             {/* Produto */}
                             <td className="py-3 px-4">
-                              <span className="font-bold text-slate-900 block truncate max-w-[240px]" title={prod?.name || 'Produto'}>
-                                {prod?.name || 'Produto'}
+                              <span className="font-bold text-slate-900 block truncate max-w-[280px]" title={prodName}>
+                                {prodName}
                               </span>
-                              {prod?.brand && (
-                                <span className="text-[10px] text-slate-400 block truncate max-w-[240px]">
-                                  {prod.brand} {prod.sku ? `• SKU ${prod.sku}` : ''}
+                              {(prodBrand || prodSku) && (
+                                <span className="text-[10px] text-slate-400 block truncate max-w-[280px]">
+                                  {prodBrand} {prodSku ? `• SKU ${prodSku}` : ''}
                                 </span>
                               )}
                             </td>
@@ -1432,7 +1515,7 @@ function NovaVendaForm() {
                             {/* Estoque */}
                             <td className="py-3 px-3 whitespace-nowrap">
                               <span className="text-emerald-700 font-medium text-[11px] bg-emerald-50 px-2 py-0.5 rounded-full">
-                                {prod ? `${prod.current_stock} ${prod.unit || 'un'}` : '-'}
+                                {prodStock}
                               </span>
                             </td>
 
