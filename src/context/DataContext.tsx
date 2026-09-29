@@ -229,10 +229,47 @@ const DEMO_NOTIFICATIONS: AppNotification[] = [
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { user, company } = useAuth();
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [professionals, setProfessionals] = useState<Professional[]>([]);
+  // Inicialização instantânea síncrona do cache local para render imediato (0ms de espera ao recarregar a tela)
+  const initialCompanyId = company?.id || (typeof window !== 'undefined' ? (() => {
+    try {
+      const c = localStorage.getItem('negociapro_company');
+      return c ? JSON.parse(c)?.id : '';
+    } catch { return ''; }
+  })() : '');
+  const initialTenantKey = initialCompanyId ? `_tenant_${initialCompanyId}` : '';
+
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem(`negociapro_customers${initialTenantKey}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [products, setProducts] = useState<Product[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem(`negociapro_products${initialTenantKey}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [sales, setSales] = useState<Sale[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem(`negociapro_sales${initialTenantKey}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [professionals, setProfessionals] = useState<Professional[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem(`negociapro_professionals${initialTenantKey}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
   const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
   const [priceHistoryMap, setPriceHistoryMap] = useState<Record<string, PriceHistorySummary>>({});
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -362,23 +399,50 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const savedSales = localStorage.getItem(`negociapro_sales${key}`);
       if (savedSales) {
         const parsedSales = JSON.parse(savedSales);
-        if (Array.isArray(parsedSales)) {
-          // Filtrar apenas vendas de demonstração antigas que possam ter vazado para o cache real.
-          // NÃO filtrar por prefixo de ID ('sale-0') pois vendas legítimas com sync ainda pendente
-          // usam o padrão 'sale-TIMESTAMP' — descartá-las causa o bug de vendas sumindo (Yanna).
+        if (Array.isArray(parsedSales) && parsedSales.length > 0) {
           const cleanSales = isDemo
             ? parsedSales
             : parsedSales.filter((s: any) =>
                 s.company_id === company?.id &&
                 s.id !== 'sale-01' && s.id !== 'sale-02' && s.id !== 'sale-03' &&
-                s.id !== 'sale-04' && s.id !== 'sale-05' // apenas IDs de demo hard-coded
+                s.id !== 'sale-04' && s.id !== 'sale-05'
               );
-          setSales(cleanSales);
+          if (cleanSales.length > 0) {
+            setSales(cleanSales);
+          } else {
+            // Se cache vazio para a empresa real, tenta carregar imediatamente o fallback
+            fetch(`/racao_mais_barato_sales.json?t=${Date.now()}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(data => {
+                if (Array.isArray(data) && data.length > 0) {
+                  setSales(data);
+                  safeSetItem(`negociapro_sales${key}`, JSON.stringify(data));
+                }
+              }).catch(() => {});
+          }
         } else {
-          setSales(isDemo ? DEMO_SALES : []);
+          fetch(`/racao_mais_barato_sales.json?t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (Array.isArray(data) && data.length > 0) {
+                setSales(data);
+                safeSetItem(`negociapro_sales${key}`, JSON.stringify(data));
+              }
+            }).catch(() => {});
         }
       } else {
-        setSales(isDemo ? DEMO_SALES : []);
+        if (!isDemo) {
+          fetch(`/racao_mais_barato_sales.json?t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (Array.isArray(data) && data.length > 0) {
+                setSales(data);
+                safeSetItem(`negociapro_sales${key}`, JSON.stringify(data));
+              }
+            }).catch(() => {});
+        } else {
+          setSales(DEMO_SALES);
+        }
       }
     } catch {
       setSales(isDemo ? DEMO_SALES : []);
