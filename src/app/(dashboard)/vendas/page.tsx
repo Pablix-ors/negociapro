@@ -693,7 +693,7 @@ export default function VendasPage() {
       )}
 
       {/* Tabela Responsiva com Modo Card Mobile */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-x-hidden overflow-y-visible">
         {filteredSales.length === 0 ? (
           <div className="p-12 text-center">
             <ShoppingCart className="w-10 h-10 text-slate-300 mx-auto mb-3" />
@@ -734,7 +734,7 @@ export default function VendasPage() {
               className="hidden sm:block overflow-x-auto w-full max-w-full scrollbar-visible bg-slate-100/70 border-b border-slate-200 py-1 px-4"
               title="Barra de rolagem horizontal rápida (arraste para navegar)"
             >
-              <div className="min-w-[1250px] h-[1px]" />
+              <div className="min-w-[1350px] h-[1px]" />
             </div>
 
             {/* Tabela com Scroll Horizontal Garantido */}
@@ -743,7 +743,7 @@ export default function VendasPage() {
               onScroll={handleBottomScroll}
               className="hidden sm:block overflow-x-auto w-full max-w-full pb-4 scrollbar-visible"
             >
-              <table className="w-full text-left text-xs min-w-[1250px]">
+              <table className="w-full text-left text-xs min-w-[1350px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Pedido</th>

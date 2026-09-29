@@ -109,7 +109,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         {/* Área Principal de Conteúdo */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <Topbar />
-          <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8 w-full max-w-full overflow-x-hidden">
+          <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8 w-full max-w-full overflow-x-auto">
             {children}
           </main>
         </div>

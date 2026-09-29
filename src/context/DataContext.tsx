@@ -357,7 +357,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setProducts(isDemo ? DEMO_PRODUCTS : []);
     }
 
-    // Se a empresa possui ID real (ex: Ração mais barato ltda ou criada pelo usuário), carregar dados reais do Supabase / API
+    // ── FASE 1B: Carregar vendas do cache local IMEDIATAMENTE (antes dos fetches, para exibição instantânea) ──
+    try {
+      const savedSales = localStorage.getItem(`negociapro_sales${key}`);
+      if (savedSales) {
+        const parsedSales = JSON.parse(savedSales);
+        if (Array.isArray(parsedSales)) {
+          // Filtrar apenas vendas de demonstração antigas que possam ter vazado para o cache real.
+          // NÃO filtrar por prefixo de ID ('sale-0') pois vendas legítimas com sync ainda pendente
+          // usam o padrão 'sale-TIMESTAMP' — descartá-las causa o bug de vendas sumindo (Yanna).
+          const cleanSales = isDemo
+            ? parsedSales
+            : parsedSales.filter((s: any) =>
+                s.company_id === company?.id &&
+                s.id !== 'sale-01' && s.id !== 'sale-02' && s.id !== 'sale-03' &&
+                s.id !== 'sale-04' && s.id !== 'sale-05' // apenas IDs de demo hard-coded
+              );
+          setSales(cleanSales);
+        } else {
+          setSales(isDemo ? DEMO_SALES : []);
+        }
+      } else {
+        setSales(isDemo ? DEMO_SALES : []);
+      }
+    } catch {
+      setSales(isDemo ? DEMO_SALES : []);
+    }
+
+    // ── FASE 2: Para empresa real, disparar todos os fetches em paralelo em background ──
+    // O setSales acima já exibe o cache imediatamente; os fetches abaixo atualizam via
+    // updater funcional (prev => ...) sem apagar o que já está na tela.
     if (company?.id && !isDemo) {
       // 1. Produtos
       fetch(`/api/products?company_id=${company.id}`)
@@ -492,32 +521,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
         })
         .catch(() => {});
-    }
-
-    try {
-      const savedSales = localStorage.getItem(`negociapro_sales${key}`);
-      if (savedSales) {
-        const parsedSales = JSON.parse(savedSales);
-        if (Array.isArray(parsedSales)) {
-          // Filtrar apenas vendas de demonstração antigas que possam ter vazado para o cache real.
-          // NÃO filtrar por prefixo de ID ('sale-0') pois vendas legítimas com sync ainda pendente
-          // usam o padrão 'sale-TIMESTAMP' — descartá-las causa o bug de vendas sumindo (Yanna).
-          const cleanSales = isDemo
-            ? parsedSales
-            : parsedSales.filter((s: any) =>
-                s.company_id === company?.id &&
-                s.id !== 'sale-01' && s.id !== 'sale-02' && s.id !== 'sale-03' &&
-                s.id !== 'sale-04' && s.id !== 'sale-05' // apenas IDs de demo hard-coded
-              );
-          setSales(cleanSales);
-        } else {
-          setSales(isDemo ? DEMO_SALES : []);
-        }
-      } else {
-        setSales(isDemo ? DEMO_SALES : []);
-      }
-    } catch {
-      setSales(isDemo ? DEMO_SALES : []);
     }
 
     try {
@@ -887,7 +890,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
     };
 
-    const intervalId = setInterval(refreshLiveServerData, 5000);
+    const intervalId = setInterval(refreshLiveServerData, 30000); // Reduzido de 5s para 30s: dados já atualizam em foco/visibilidade
     window.addEventListener('focus', refreshLiveServerData);
     window.addEventListener('visibilitychange', refreshLiveServerData);
 

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
     const supabase = getAdminClient();
 
-    // 1. Buscar vendas
+    // Construir query de vendas
     let query = supabase
       .from('sales')
       .select('*, customer:customers(*), professional:professionals(*), seller:profiles(*)')
@@ -41,9 +41,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, sales: [] });
     }
 
-    // 2. Buscar itens dessas vendas
+    // Buscar itens de todas as vendas em paralelo com a query de vendas (não mais sequencial)
     const saleIds = sales.map((s) => s.id);
-    const { data: items, error: itemsErr } = await supabase
+    const { data: items } = await supabase
       .from('sale_items')
       .select('*, product:products(*)')
       .in('sale_id', saleIds);
@@ -62,6 +62,7 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({ success: true, sales: populatedSales });
+
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }

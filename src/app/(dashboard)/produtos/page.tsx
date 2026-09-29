@@ -887,7 +887,7 @@ export default function ProdutosPage() {
       </div>
 
       {/* Tabela de Produtos com Edição Rápida Direto na Lista */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-x-hidden overflow-y-visible">
         {filteredProducts.length === 0 ? (
           <div className="p-12 text-center">
             <Package className="w-10 h-10 text-slate-300 mx-auto mb-3" />
@@ -903,7 +903,7 @@ export default function ProdutosPage() {
               className="hidden sm:block overflow-x-auto w-full max-w-full scrollbar-visible bg-slate-100/70 border-b border-slate-200 py-1 px-4"
               title="Barra de rolagem horizontal rápida"
             >
-              <div className="min-w-[1300px] h-[1px]" />
+              <div className="min-w-[1450px] h-[1px]" />
             </div>
 
             {/* Tabela com scroll horizontal */}
@@ -912,7 +912,7 @@ export default function ProdutosPage() {
               onScroll={handleBottomScroll}
               className="hidden sm:block overflow-x-auto w-full max-w-full pb-4 scrollbar-visible"
             >
-              <table className="w-full text-left text-xs min-w-[1300px]">
+              <table className="w-full text-left text-xs min-w-[1450px]">
                 <thead className="bg-slate-50/90 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200 sticky top-0 z-10 backdrop-blur-xs">
                   <tr>
                     {/* Checkbox de seleção da página */}
