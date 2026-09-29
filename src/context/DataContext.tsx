@@ -479,48 +479,65 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
 
       // 4. Vendas
-      fetch(`/api/sales?company_id=${company.id}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && data.success && Array.isArray(data.sales)) {
-            setSales((prev) => {
-              // 1. Mapear vendas do servidor por ID e por sale_number
-              const serverSalesMap = new Map(data.sales.map((ss: Sale) => [ss.id, ss]));
-              const serverSaleNumbers = new Set(data.sales.map((ss: Sale) => Number(ss.sale_number)));
+      const handleSalesReceived = (incomingSales: any[]) => {
+        if (!Array.isArray(incomingSales) || incomingSales.length === 0) return;
+        setSales((prev) => {
+          const serverSalesMap = new Map(incomingSales.map((ss: Sale) => [ss.id, ss]));
+          const serverSaleNumbers = new Set(incomingSales.map((ss: Sale) => Number(ss.sale_number)));
 
-              const merged = data.sales.map((serverSale: Sale) => {
-                const existing = prev.find((p) => p.id === serverSale.id);
-                if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
-                  return { ...serverSale, items: existing.items };
-                }
-                return serverSale;
-              });
+          const merged = incomingSales.map((serverSale: Sale) => {
+            const existing = prev.find((p) => p.id === serverSale.id);
+            if (existing && (!serverSale.items || serverSale.items.length === 0) && existing.items && existing.items.length > 0) {
+              return { ...serverSale, items: existing.items };
+            }
+            return serverSale;
+          });
 
-              // 2. Preservar APENAS:
-              //   a) Orçamentos locais (QUOTE) cujo ID ou sale_number ainda não chegou no servidor
-              //   b) Vendas locais marcadas como _pendingSync=true (POST ainda em andamento / falhou e será retentado)
-              // NUNCA preservar vendas locais COMPLETED sem _pendingSync — causam duplicatas (bug Ivan)
-              const localOnly = prev.filter((p: any) =>
-                !serverSalesMap.has(p.id) &&
-                !serverSaleNumbers.has(Number(p.sale_number)) &&
-                (p.status === 'QUOTE' || p._pendingSync === true)
-              );
+          const localOnly = prev.filter((p: any) =>
+            !serverSalesMap.has(p.id) &&
+            !serverSaleNumbers.has(Number(p.sale_number)) &&
+            (p.status === 'QUOTE' || p._pendingSync === true)
+          );
 
-              // 3. Retentar POST de vendas E orçamentos pendentes que ainda não existem no servidor
-              if (company?.id && !isDemoCompany) {
-                localOnly.forEach((pendingSale: any) => {
-                  syncPendingSaleToServer(pendingSale, key, company.id);
-                });
-              }
-
-              const fullMerged = [...localOnly, ...merged];
-
-              safeSetItem(`negociapro_sales${key}`, JSON.stringify(fullMerged));
-              return fullMerged;
+          if (company?.id && !isDemoCompany) {
+            localOnly.forEach((pendingSale: any) => {
+              syncPendingSaleToServer(pendingSale, key, company.id);
             });
           }
+
+          const fullMerged = [...localOnly, ...merged];
+          safeSetItem(`negociapro_sales${key}`, JSON.stringify(fullMerged));
+          return fullMerged;
+        });
+      };
+
+      fetch(`/api/sales?company_id=${company.id}&t=${Date.now()}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.success && Array.isArray(data.sales) && data.sales.length > 0) {
+            handleSalesReceived(data.sales);
+          } else {
+            // Se API não retornou vendas ou retornou vazio, tenta o arquivo de fallback
+            fetch(`/racao_mais_barato_sales.json?t=${Date.now()}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((cachedSales) => {
+                if (Array.isArray(cachedSales) && cachedSales.length > 0) {
+                  handleSalesReceived(cachedSales);
+                }
+              })
+              .catch(() => {});
+          }
         })
-        .catch(() => {});
+        .catch(() => {
+          fetch(`/racao_mais_barato_sales.json?t=${Date.now()}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((cachedSales) => {
+              if (Array.isArray(cachedSales) && cachedSales.length > 0) {
+                handleSalesReceived(cachedSales);
+              }
+            })
+            .catch(() => {});
+        });
     }
 
     try {

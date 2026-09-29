@@ -4,6 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fakytcdlffdulvdmbjut.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function getAdminClient() {
   return createClient(supabaseUrl, supabaseKey);
 }
@@ -61,7 +64,13 @@ export async function GET(request: Request) {
       items: itemsBySaleId[s.id] || [],
     }));
 
-    return NextResponse.json({ success: true, sales: populatedSales });
+    return NextResponse.json({ success: true, sales: populatedSales }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      }
+    });
 
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
