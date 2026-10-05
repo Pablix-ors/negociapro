@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { parsePagination, paginate, parseUpdatedSince } from '@/lib/server/apiHelpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fakytcdlffdulvdmbjut.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -22,6 +23,8 @@ const SALE_SELECT = `*, customer:customers(${CUSTOMER_COLS}), professional:profe
 const SALE_ITEM_SELECT = `*, product:products(${PRODUCT_COLS})`;
 
 // GET: Listar vendas de uma empresa com itens, cliente e profissional
+// Paginado (page/pageSize), incremental (updated_since) e modo leve (fields=ids → id, sale_number, status).
+// Busca por id/sale_id/customer_id continua funcionando normalmente.
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -34,6 +37,26 @@ export async function GET(request: Request) {
     }
 
     const supabase = getAdminClient();
+    const p = parsePagination(searchParams);
+    const serverTime = new Date().toISOString();
+    const noStore = {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    };
+
+    if (searchParams.get('fields') === 'ids') {
+      // Lista mínima usada para reconciliar exclusões e pendências de sincronização
+      const { data, error } = await supabase
+        .from('sales')
+        .select('id, sale_number, status')
+        .eq('company_id', companyId)
+        .order('id', { ascending: true })
+        .range(p.from, p.toWithExtra);
+      if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      const { rows, meta } = paginate(data, p);
+      return NextResponse.json({ success: true, sales: rows, ...meta, server_time: serverTime }, { headers: noStore });
+    }
 
     // Construir query de vendas
     let query = supabase
@@ -49,25 +72,46 @@ export async function GET(request: Request) {
       query = query.eq('customer_id', customerId);
     }
 
-    const { data: sales, error: salesErr } = await query.order('sold_at', { ascending: false });
+    const updatedSince = parseUpdatedSince(searchParams);
+    if (updatedSince) {
+      query = query.gte('updated_at', updatedSince);
+    }
+
+    const { data: rawSales, error: salesErr } = await query
+      .order('sold_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(p.from, p.toWithExtra);
 
     if (salesErr) {
       return NextResponse.json({ success: false, error: salesErr.message }, { status: 500 });
     }
 
-    if (!sales || sales.length === 0) {
-      return NextResponse.json({ success: true, sales: [] });
+    const { rows: sales, meta } = paginate(rawSales, p);
+
+    if (sales.length === 0) {
+      return NextResponse.json({ success: true, sales: [], ...meta, server_time: serverTime }, { headers: noStore });
     }
 
-    // Buscar itens de todas as vendas em paralelo com a query de vendas (não mais sequencial)
+    // Itens em lotes de 50 vendas (URL curta) e paginando de 1000 em 1000 (limite padrão do PostgREST)
     const saleIds = sales.map((s) => s.id);
-    const { data: items } = await supabase
-      .from('sale_items')
-      .select(SALE_ITEM_SELECT)
-      .in('sale_id', saleIds);
+    const items: any[] = [];
+    for (let i = 0; i < saleIds.length; i += 50) {
+      const chunk = saleIds.slice(i, i + 50);
+      for (let from = 0; ; from += 1000) {
+        const { data: part, error: itemsErr } = await supabase
+          .from('sale_items')
+          .select(SALE_ITEM_SELECT)
+          .in('sale_id', chunk)
+          .order('id', { ascending: true })
+          .range(from, from + 999);
+        if (itemsErr || !part) break;
+        items.push(...part);
+        if (part.length < 1000) break;
+      }
+    }
 
     const itemsBySaleId: Record<string, any[]> = {};
-    (items || []).forEach((item) => {
+    items.forEach((item) => {
       if (!itemsBySaleId[item.sale_id]) {
         itemsBySaleId[item.sale_id] = [];
       }
@@ -79,13 +123,7 @@ export async function GET(request: Request) {
       items: itemsBySaleId[s.id] || [],
     }));
 
-    return NextResponse.json({ success: true, sales: populatedSales }, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-      }
-    });
+    return NextResponse.json({ success: true, sales: populatedSales, ...meta, server_time: serverTime }, { headers: noStore });
 
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });

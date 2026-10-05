@@ -7,6 +7,7 @@ import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, maskCPF, maskPhone } from '@/lib/formatters';
 import { Professional, Profile, UserRole } from '@/types/database';
+import { compressImageFile, AVATAR_COMPRESSION } from '@/lib/imageCompression';
 import {
   Award,
   Plus,
@@ -343,21 +344,18 @@ export default function ProfissionaisPage() {
     }
   };
 
-  // Upload rápido de avatar com fallback
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload rápido de avatar com compressão e redimensionamento automático
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 3 * 1024 * 1024) {
-      setError('A foto deve ter no máximo 3MB.');
-      return;
+    try {
+      const compressed = await compressImageFile(file, AVATAR_COMPRESSION);
+      setAvatarUrl(compressed);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao processar avatar.');
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAvatarUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const [resendingEmail, setResendingEmail] = useState<string | null>(null);

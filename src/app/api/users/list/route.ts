@@ -20,10 +20,10 @@ export async function GET(request: Request) {
 
     const supabase = getAdminClient();
 
-    // 1. Buscar perfis na tabela profiles
+    // 1. Buscar perfis na tabela profiles (sem avatar_url base64)
     const { data: profiles, error: profError } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, company_id, name, email, role, phone, active')
       .eq('company_id', companyId)
       .order('created_at', { ascending: true });
 
@@ -46,10 +46,10 @@ export async function GET(request: Request) {
       console.warn('Aviso ao listar auth users:', authErr);
     }
 
-    // 3. Buscar também na tabela professionals para garantir que todo profissional cadastrado com e-mail apareça na equipe
+    // 3. Buscar também na tabela professionals (sem avatar_url base64)
     const { data: professionals } = await supabase
       .from('professionals')
-      .select('*')
+      .select('id, company_id, name, email, role_title, phone, active')
       .eq('company_id', companyId);
 
     // 4. Montar lista consolidada

@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import {
+  parsePagination,
+  paginate,
+  parseUpdatedSince,
+  buildImageProxyUrl,
+  isImageProxyUrl,
+} from '@/lib/server/apiHelpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fakytcdlffdulvdmbjut.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -8,7 +15,39 @@ function getAdminClient() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
-// GET: Obter produtos de uma empresa
+// EGRESS: colunas explícitas, SEM image_url (base64). A imagem é servida por /api/images
+// com cache imutável; aqui retornamos apenas a URL versionada quando o produto tem imagem.
+const PRODUCT_COLS = 'id, company_id, category_id, name, sku, barcode, unit, brand, description, cost_price, selling_price, min_price, current_stock, min_stock, commission_type, commission_value, active, created_at, updated_at';
+
+type ProductRow = { id: string; updated_at?: string | null; [k: string]: unknown };
+
+/** Anexa image_url (URL do proxy) aos produtos que possuem imagem, sem baixar o base64. */
+async function attachImageUrls(supabase: SupabaseClient, companyId: string, rows: ProductRow[]) {
+  if (rows.length === 0) return rows;
+  const { data: withImage } = await supabase
+    .from('products')
+    .select('id')
+    .eq('company_id', companyId)
+    .not('image_url', 'is', null)
+    .neq('image_url', '');
+  const ids = new Set((withImage || []).map((r: { id: string }) => r.id));
+  return rows.map((p) => ({
+    ...p,
+    image_url: ids.has(p.id) ? buildImageProxyUrl('product', p.id, p.updated_at) : null,
+  }));
+}
+
+/** Remove image_url quando é a URL do proxy (imagem não alterada) para nunca sobrescrever o base64. */
+function sanitizeImageField<T extends Record<string, unknown>>(fields: T): T {
+  if (isImageProxyUrl(fields.image_url)) {
+    const copy = { ...fields };
+    delete copy.image_url;
+    return copy;
+  }
+  return fields;
+}
+
+// GET: Obter produtos de uma empresa (paginado: page/pageSize; incremental: updated_since; fields=ids)
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,17 +58,39 @@ export async function GET(request: Request) {
     }
 
     const supabase = getAdminClient();
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('name', { ascending: true });
+    const p = parsePagination(searchParams);
+    const serverTime = new Date().toISOString();
+    const idsOnly = searchParams.get('fields') === 'ids';
+
+    if (idsOnly) {
+      // Lista leve só com ids (usada para detectar exclusões feitas em outro dispositivo)
+      const { data, error } = await supabase
+        .from('products')
+        .select('id')
+        .eq('company_id', companyId)
+        .order('id', { ascending: true })
+        .range(p.from, p.toWithExtra);
+      if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      const { rows, meta } = paginate(data, p);
+      return NextResponse.json({ success: true, ids: rows.map((r) => r.id), ...meta, server_time: serverTime });
+    }
+
+    let query = supabase.from('products').select(PRODUCT_COLS).eq('company_id', companyId);
+    const updatedSince = parseUpdatedSince(searchParams);
+    if (updatedSince) query = query.gte('updated_at', updatedSince);
+
+    const { data, error } = await query
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })
+      .range(p.from, p.toWithExtra);
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, products: data || [] });
+    const { rows, meta } = paginate(data as ProductRow[] | null, p);
+    const products = await attachImageUrls(supabase, companyId, rows);
+    return NextResponse.json({ success: true, products, ...meta, server_time: serverTime });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
@@ -69,7 +130,7 @@ export async function POST(request: Request) {
       const insertedAll: any[] = [];
       for (let i = 0; i < formatted.length; i += chunkSize) {
         const chunk = formatted.slice(i, i + chunkSize);
-        const { data, error } = await supabase.from('products').insert(chunk).select();
+        const { data, error } = await supabase.from('products').insert(chunk).select(PRODUCT_COLS);
         if (error) {
           console.error('Erro ao inserir lote de produtos:', error);
           return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -95,15 +156,23 @@ export async function POST(request: Request) {
           current_stock: Number(product.current_stock) || 0,
           min_stock: Number(product.min_stock) || 0,
           active: product.active !== false,
+          // Antes estes campos eram descartados no cadastro individual (imagem/comissão não eram salvas)
+          ...(product.image_url && !isImageProxyUrl(product.image_url) ? { image_url: product.image_url } : {}),
+          ...(product.commission_type ? { commission_type: product.commission_type } : {}),
+          ...(product.commission_value !== undefined ? { commission_value: Number(product.commission_value) || 0 } : {}),
         }])
-        .select()
+        .select(PRODUCT_COLS)
         .single();
 
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
 
-      return NextResponse.json({ success: true, product: data });
+      // Mantém no cliente a imagem recém-enviada (evita sumir da tela após o insert)
+      return NextResponse.json({
+        success: true,
+        product: { ...data, image_url: product.image_url && !isImageProxyUrl(product.image_url) ? product.image_url : null },
+      });
     }
 
     return NextResponse.json({ success: false, error: 'Nenhum produto enviado' }, { status: 400 });
@@ -144,7 +213,7 @@ export async function PUT(request: Request) {
         .update(allowedUpdates)
         .in('id', ids)
         .eq('company_id', company_id)
-        .select();
+        .select('id');
 
       if (error) {
         console.error('Erro no update em lote de produtos:', error);
@@ -158,14 +227,15 @@ export async function PUT(request: Request) {
     if (Array.isArray(products) && products.length > 0) {
       const updatedList: any[] = [];
       for (const p of products) {
-        const { id: prodId, ...fields } = p;
+        const { id: prodId, ...rawFields } = p;
         if (!prodId) continue;
+        const fields = sanitizeImageField(rawFields);
         const { data, error } = await supabase
           .from('products')
           .update({ ...fields, updated_at: now })
           .eq('id', prodId)
           .eq('company_id', company_id)
-          .select()
+          .select('id')
           .maybeSingle();
 
         if (data && !error) updatedList.push(data);
@@ -182,12 +252,12 @@ export async function PUT(request: Request) {
     const { data, error } = await supabase
       .from('products')
       .update({
-        ...updateFields,
+        ...sanitizeImageField(updateFields),
         updated_at: now,
       })
       .eq('id', id)
       .eq('company_id', company_id)
-      .select()
+      .select(PRODUCT_COLS)
       .single();
 
     if (error) {

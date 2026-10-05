@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { parsePagination, paginate, parseUpdatedSince } from '@/lib/server/apiHelpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fakytcdlffdulvdmbjut.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -8,7 +9,9 @@ function getAdminClient() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
-// GET: Listar clientes da empresa
+const CUSTOMER_COLS = 'id, company_id, type, name, trade_name, document, state_registration, municipal_registration, birth_date, email, phone, whatsapp, contact_person, zip_code, street, number, complement, neighborhood, city, state, notes, active, created_at, updated_at';
+
+// GET: Listar clientes da empresa (paginado: page/pageSize; incremental: updated_since; fields=ids)
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,15 +22,35 @@ export async function GET(request: Request) {
     }
 
     const supabase = getAdminClient();
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('name', { ascending: true });
+    const p = parsePagination(searchParams);
+    const serverTime = new Date().toISOString();
+
+    if (searchParams.get('fields') === 'ids') {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('company_id', companyId)
+        .order('id', { ascending: true })
+        .range(p.from, p.toWithExtra);
+      if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      const { rows, meta } = paginate(data, p);
+      return NextResponse.json({ success: true, ids: rows.map((r) => r.id), ...meta, server_time: serverTime });
+    }
+
+    let query = supabase.from('customers').select(CUSTOMER_COLS).eq('company_id', companyId);
+    const updatedSince = parseUpdatedSince(searchParams);
+    if (updatedSince) query = query.gte('updated_at', updatedSince);
+
+    const { data: rawData, error } = await query
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })
+      .range(p.from, p.toWithExtra);
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
+
+    const { rows: data, meta } = paginate(rawData, p);
 
     // Mapear campos agregados e metadados preservados em notes
     const mapped = (data || []).map((c: any) => {
@@ -52,7 +75,7 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ success: true, customers: mapped });
+    return NextResponse.json({ success: true, customers: mapped, ...meta, server_time: serverTime });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
