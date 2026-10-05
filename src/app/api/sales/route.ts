@@ -11,6 +11,16 @@ function getAdminClient() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
+// EGRESS: colunas explícitas nos joins. NUNCA incluir avatar_url (profiles/professionals)
+// nem image_url (products): são armazenados como base64 (até vários MB) e eram
+// replicados em CADA venda / CADA item a cada sincronização, gerando dezenas de GB de egress.
+const CUSTOMER_COLS = 'id, company_id, type, name, trade_name, document, state_registration, municipal_registration, email, phone, whatsapp, contact_person, zip_code, street, number, complement, neighborhood, city, state, active';
+const PROFESSIONAL_COLS = 'id, company_id, name, document, phone, email, role_title, active';
+const SELLER_COLS = 'id, name, email, role';
+const PRODUCT_COLS = 'id, company_id, name, sku, barcode, unit, brand, cost_price, selling_price, min_price, current_stock, min_stock, commission_type, commission_value, active';
+const SALE_SELECT = `*, customer:customers(${CUSTOMER_COLS}), professional:professionals(${PROFESSIONAL_COLS})`;
+const SALE_ITEM_SELECT = `*, product:products(${PRODUCT_COLS})`;
+
 // GET: Listar vendas de uma empresa com itens, cliente e profissional
 export async function GET(request: Request) {
   try {
@@ -28,7 +38,7 @@ export async function GET(request: Request) {
     // Construir query de vendas
     let query = supabase
       .from('sales')
-      .select('*, customer:customers(*), professional:professionals(*), seller:profiles(*)')
+      .select(`${SALE_SELECT}, seller:profiles(${SELLER_COLS})`)
       .eq('company_id', companyId);
 
     if (saleId) {
@@ -53,7 +63,7 @@ export async function GET(request: Request) {
     const saleIds = sales.map((s) => s.id);
     const { data: items } = await supabase
       .from('sale_items')
-      .select('*, product:products(*)')
+      .select(SALE_ITEM_SELECT)
       .in('sale_id', saleIds);
 
     const itemsBySaleId: Record<string, any[]> = {};
@@ -123,7 +133,7 @@ export async function POST(request: Request) {
     const { data: createdSale, error: saleErr } = await supabase
       .from('sales')
       .insert([salePayload])
-      .select('*, customer:customers(*), professional:professionals(*)')
+      .select(SALE_SELECT)
       .single();
 
     if (saleErr) {
@@ -149,7 +159,7 @@ export async function POST(request: Request) {
       const { data: insertedWithComm, error: commErr } = await supabase
         .from('sale_items')
         .insert(itemsPayloadWithCommission)
-        .select('*, product:products(*)');
+        .select(SALE_ITEM_SELECT);
 
       if (commErr) {
         console.warn('Aviso: falha ao salvar itens com colunas de comissão, tentando com colunas base:', commErr.message);
@@ -168,7 +178,7 @@ export async function POST(request: Request) {
         const { data: insertedBase, error: baseErr } = await supabase
           .from('sale_items')
           .insert(itemsPayloadBase)
-          .select('*, product:products(*)');
+          .select(SALE_ITEM_SELECT);
 
         if (baseErr) {
           console.error('Erro ao salvar itens da venda (base):', baseErr.message);
@@ -210,7 +220,7 @@ export async function PATCH(request: Request) {
       .update({ status: status || 'CANCELLED', updated_at: new Date().toISOString() })
       .eq('id', id)
       .eq('company_id', company_id)
-      .select()
+      .select('id, status, updated_at')
       .single();
 
     if (error) {
@@ -269,7 +279,7 @@ export async function PUT(request: Request) {
       .update(updatePayload)
       .eq('id', sale_id)
       .eq('company_id', company_id)
-      .select('*, customer:customers(*), professional:professionals(*)')
+      .select(SALE_SELECT)
       .single();
 
     if (updateErr) {
@@ -299,7 +309,7 @@ export async function PUT(request: Request) {
         const { data: insertedItems } = await supabase
           .from('sale_items')
           .insert(itemsPayload)
-          .select('*, product:products(*)');
+          .select(SALE_ITEM_SELECT);
 
         updatedSale.items = insertedItems || items;
       } else {

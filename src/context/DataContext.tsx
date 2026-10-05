@@ -971,15 +971,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
     };
 
-    const intervalId = setInterval(refreshLiveServerData, 30000); // Reduzido de 5s para 30s: dados já atualizam em foco/visibilidade
-    window.addEventListener('focus', refreshLiveServerData);
-    window.addEventListener('visibilitychange', refreshLiveServerData);
+    // EGRESS: antes era setInterval de 30s + 'focus' + 'visibilitychange' (os dois últimos disparam
+    // juntos ao trocar de aba → 2 recargas completas duplicadas). Cada recarga baixava TODOS os
+    // produtos (com imagens base64), clientes e vendas+itens. Agora: intervalo de 5 min, um único
+    // gatilho de visibilidade e intervalo mínimo de 60s entre recargas, sem requisições sobrepostas.
+    const POLL_INTERVAL_MS = 5 * 60 * 1000;
+    const MIN_REFRESH_GAP_MS = 60 * 1000;
+    let lastRefreshAt = Date.now(); // a carga inicial acabou de ocorrer no efeito de montagem
+    let inFlight = false;
+
+    const throttledRefresh = () => {
+      if (!isMounted || inFlight || document.visibilityState === 'hidden') return;
+      if (Date.now() - lastRefreshAt < MIN_REFRESH_GAP_MS) return;
+      lastRefreshAt = Date.now();
+      inFlight = true;
+      refreshLiveServerData();
+      setTimeout(() => { inFlight = false; }, 5000);
+    };
+
+    const intervalId = setInterval(throttledRefresh, POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', throttledRefresh);
 
     return () => {
       isMounted = false;
       clearInterval(intervalId);
-      window.removeEventListener('focus', refreshLiveServerData);
-      window.removeEventListener('visibilitychange', refreshLiveServerData);
+      document.removeEventListener('visibilitychange', throttledRefresh);
     };
   }, [company?.id, isDemoCompany, tenantKey]);
 
