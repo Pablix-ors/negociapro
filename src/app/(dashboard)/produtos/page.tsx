@@ -47,6 +47,8 @@ import {
   Minus,
   RefreshCw,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function ProdutosPage() {
@@ -62,6 +64,23 @@ export default function ProdutosPage() {
   const { user } = useAuth();
   const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
 
+  // Paginação e controle de dados server-side
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [paginatedProducts, setPaginatedProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+
+  // Estatísticas globais do catálogo da empresa
+  const [catalogStats, setCatalogStats] = useState({
+    totalProducts: 0,
+    totalStock: 0,
+    criticalCount: 0,
+    brands: [] as string[],
+    units: [] as string[],
+  });
+
   // Estados de busca e filtros básicos
   const [filterQuery, setFilterQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'NORMAL'>('ALL');
@@ -76,6 +95,155 @@ export default function ProdutosPage() {
   const [minStockFilter, setMinStockFilter] = useState('');
   const [maxStockFilter, setMaxStockFilter] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  // Busca e carrega estatísticas globais da empresa
+  const fetchStats = React.useCallback(async () => {
+    if (!user?.company_id) return;
+    try {
+      const res = await fetch(`/api/products?company_id=${user.company_id}&fields=stats`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.stats) {
+          setCatalogStats(data.stats);
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar estatísticas do catálogo:', err);
+    }
+  }, [user?.company_id]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // Carrega a página atual de produtos via API com todos os filtros aplicados no backend
+  const fetchPaginatedProducts = React.useCallback(async () => {
+    if (!user?.company_id) return;
+    setIsLoadingProducts(true);
+
+    try {
+      const params = new URLSearchParams();
+      params.set('company_id', user.company_id);
+      params.set('page', String(currentPage));
+      params.set('limit', String(pageSize));
+
+      if (filterQuery.trim()) params.set('search', filterQuery.trim());
+      if (brandFilter.trim()) params.set('brand', brandFilter.trim());
+      if (unitFilter.trim()) params.set('unit', unitFilter.trim());
+      if (commissionFilter !== 'ALL') params.set('commission_type', commissionFilter);
+      if (activeFilter === 'ACTIVE') params.set('active', 'true');
+      if (activeFilter === 'INACTIVE') params.set('active', 'false');
+      if (minPriceFilter) params.set('min_price', minPriceFilter);
+      if (maxPriceFilter) params.set('max_price', maxPriceFilter);
+      if (minStockFilter) params.set('min_stock', minStockFilter);
+      if (maxStockFilter) params.set('max_stock', maxStockFilter);
+
+      const res = await fetch(`/api/products?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          let list = (data.products || []) as Product[];
+
+          // O filtro rápido de estoque (LOW = current_stock <= min_stock) é refinado caso ativo
+          if (stockFilter === 'LOW') {
+            list = list.filter((p) => p.current_stock <= p.min_stock);
+          } else if (stockFilter === 'NORMAL') {
+            list = list.filter((p) => p.current_stock > p.min_stock);
+          }
+
+          setPaginatedProducts(list);
+          const totalFound = data.pagination?.total ?? data.total ?? list.length;
+          setTotalProducts(totalFound);
+          setTotalPages(data.pagination?.totalPages ?? Math.max(1, Math.ceil(totalFound / pageSize)));
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar produtos paginados:', err);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [
+    user?.company_id,
+    currentPage,
+    pageSize,
+    filterQuery,
+    stockFilter,
+    activeFilter,
+    brandFilter,
+    unitFilter,
+    commissionFilter,
+    minPriceFilter,
+    maxPriceFilter,
+    minStockFilter,
+    maxStockFilter,
+  ]);
+
+  // Executa busca quando filtros ou paginação mudam
+  useEffect(() => {
+    fetchPaginatedProducts();
+  }, [fetchPaginatedProducts]);
+
+  // Lista de marcas disponíveis para dropdown
+  const allBrands = React.useMemo(() => {
+    const fromStats = catalogStats.brands || [];
+    const fromProducts = Array.from(new Set(products.map((p) => p.brand).filter(Boolean) as string[]));
+    return Array.from(new Set([...fromStats, ...fromProducts])).sort();
+  }, [catalogStats.brands, products]);
+
+  // Contagem de filtros avançados ativos
+  const advancedFilterCount = [
+    brandFilter,
+    unitFilter,
+    commissionFilter !== 'ALL' ? commissionFilter : '',
+    minPriceFilter,
+    maxPriceFilter,
+    minStockFilter,
+    maxStockFilter,
+    activeFilter !== 'ALL' ? activeFilter : '',
+  ].filter(Boolean).length;
+
+  // Resetar todos os filtros e voltar para a página 1
+  const resetAllFilters = () => {
+    setFilterQuery('');
+    setStockFilter('ALL');
+    setActiveFilter('ALL');
+    setBrandFilter('');
+    setUnitFilter('');
+    setCommissionFilter('ALL');
+    setMinPriceFilter('');
+    setMaxPriceFilter('');
+    setMinStockFilter('');
+    setMaxStockFilter('');
+    setCurrentPage(1);
+  };
+
+  // Retorna para a página 1 ao alterar busca ou filtros
+  const handleQueryChange = (val: string) => {
+    setFilterQuery(val);
+    setCurrentPage(1);
+  };
+
+  const handleStockFilterChange = (val: 'ALL' | 'LOW' | 'NORMAL') => {
+    setStockFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+  };
+
+  // Produtos visíveis na página atual
+  const filteredProducts = paginatedProducts;
+
+  // Estatísticas de estoque da empresa
+  const totalStockItems = catalogStats.totalStock > 0
+    ? catalogStats.totalStock
+    : products.reduce((acc, p) => acc + p.current_stock, 0);
+
+  const lowStockCount = catalogStats.criticalCount > 0
+    ? catalogStats.criticalCount
+    : products.filter((p) => p.current_stock <= p.min_stock).length;
 
   // SELEÇÃO MÚLTIPLA
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -155,79 +323,6 @@ export default function ProdutosPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Filtragem dos produtos
-  const filteredProducts = products.filter((p) => {
-    const matchesQuery =
-      p.name.toLowerCase().includes(filterQuery.toLowerCase()) ||
-      (p.sku && p.sku.toLowerCase().includes(filterQuery.toLowerCase())) ||
-      (p.brand && p.brand.toLowerCase().includes(filterQuery.toLowerCase()));
-
-    const isLow = p.current_stock <= p.min_stock;
-    const matchesStock =
-      stockFilter === 'ALL' ||
-      (stockFilter === 'LOW' && isLow) ||
-      (stockFilter === 'NORMAL' && !isLow);
-
-    const matchesActive =
-      activeFilter === 'ALL' ||
-      (activeFilter === 'ACTIVE' && p.active) ||
-      (activeFilter === 'INACTIVE' && !p.active);
-
-    // Filtros avançados
-    const matchesBrand = !brandFilter || (p.brand || '').toLowerCase().includes(brandFilter.toLowerCase());
-    const matchesUnit = !unitFilter || p.unit.toUpperCase() === unitFilter.toUpperCase();
-    const matchesCommission = commissionFilter === 'ALL' || p.commission_type === commissionFilter;
-    const matchesMinPrice = !minPriceFilter || p.selling_price >= Number(minPriceFilter);
-    const matchesMaxPrice = !maxPriceFilter || p.selling_price <= Number(maxPriceFilter);
-    const matchesMinStock = !minStockFilter || p.current_stock >= Number(minStockFilter);
-    const matchesMaxStock = !maxStockFilter || p.current_stock <= Number(maxStockFilter);
-
-    return (
-      matchesQuery &&
-      matchesStock &&
-      matchesActive &&
-      matchesBrand &&
-      matchesUnit &&
-      matchesCommission &&
-      matchesMinPrice &&
-      matchesMaxPrice &&
-      matchesMinStock &&
-      matchesMaxStock
-    );
-  });
-
-  // Marcas e unidades únicas para filtros
-  const allBrands = Array.from(new Set(products.map((p) => p.brand).filter(Boolean) as string[])).sort();
-
-  // Contagem de filtros avançados ativos
-  const advancedFilterCount = [
-    brandFilter,
-    unitFilter,
-    commissionFilter !== 'ALL' ? commissionFilter : '',
-    minPriceFilter,
-    maxPriceFilter,
-    minStockFilter,
-    maxStockFilter,
-    activeFilter !== 'ALL' ? activeFilter : '',
-  ].filter(Boolean).length;
-
-  const resetAllFilters = () => {
-    setFilterQuery('');
-    setStockFilter('ALL');
-    setActiveFilter('ALL');
-    setBrandFilter('');
-    setUnitFilter('');
-    setCommissionFilter('ALL');
-    setMinPriceFilter('');
-    setMaxPriceFilter('');
-    setMinStockFilter('');
-    setMaxStockFilter('');
-  };
-
-  // Estatísticas rápidas de estoque
-  const totalStockItems = products.reduce((acc, p) => acc + p.current_stock, 0);
-  const lowStockCount = products.filter((p) => p.current_stock <= p.min_stock).length;
 
   // Lógica de seleção
   const toggleSelectOne = (id: string) => {
@@ -369,6 +464,16 @@ export default function ProdutosPage() {
     }
   };
 
+  // Excluir produto individual
+  const handleDeleteProduct = (id: string, name: string) => {
+    if (window.confirm(`Tem certeza que deseja excluir "${name}"?`)) {
+      deleteProduct(id);
+      setPaginatedProducts((prev) => prev.filter((p) => p.id !== id));
+      setTotalProducts((prev) => Math.max(0, prev - 1));
+      fetchStats();
+    }
+  };
+
   // Excluir em massa os selecionados
   const handleBulkDelete = async () => {
     const count = selectedIds.size;
@@ -379,7 +484,10 @@ export default function ProdutosPage() {
 
     try {
       await bulkDeleteProducts(Array.from(selectedIds));
+      setPaginatedProducts((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+      setTotalProducts((prev) => Math.max(0, prev - count));
       clearSelection();
+      fetchStats();
     } catch (err) {
       alert('Erro ao excluir produtos.');
     }
@@ -388,6 +496,9 @@ export default function ProdutosPage() {
   // Edição rápida inline com feedback visual instantâneo
   const handleInlineUpdate = (id: string, updates: Partial<Product>) => {
     updateProduct(id, updates);
+    setPaginatedProducts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updates, updated_at: new Date().toISOString() } : p))
+    );
     setRecentlySavedId(id);
     setTimeout(() => {
       setRecentlySavedId((current) => (current === id ? null : current));
@@ -401,8 +512,16 @@ export default function ProdutosPage() {
 
     const change = adjustmentType === 'IN' ? adjustQty : -adjustQty;
     adjustStock(selectedProduct.id, change, adjustReason);
+    setPaginatedProducts((prev) =>
+      prev.map((p) =>
+        p.id === selectedProduct.id
+          ? { ...p, current_stock: Math.max(0, p.current_stock + change) }
+          : p
+      )
+    );
     setSelectedProduct(null);
     setAdjustQty(10);
+    fetchStats();
   };
 
   // Leitura do arquivo Excel para Importação
@@ -572,14 +691,14 @@ export default function ProdutosPage() {
                     className="w-full text-left px-3.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center justify-between"
                   >
                     <span>Todos os Produtos (.xlsx)</span>
-                    <span className="text-[10px] font-mono text-slate-400">({products.length})</span>
+                    <span className="text-[10px] font-mono text-slate-400">({catalogStats.totalProducts > 0 ? catalogStats.totalProducts : totalProducts})</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleExport('filtered', 'xlsx')}
                     className="w-full text-left px-3.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center justify-between"
                   >
-                    <span>Produtos Filtrados (.xlsx)</span>
+                    <span>Produtos da Página / Filtrados (.xlsx)</span>
                     <span className="text-[10px] font-mono text-slate-400">({filteredProducts.length})</span>
                   </button>
                   <button
@@ -617,7 +736,7 @@ export default function ProdutosPage() {
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold uppercase text-slate-400">Total de Produtos</span>
-            <p className="text-xl font-black text-slate-900 mt-0.5">{products.length} cadastrados</p>
+            <p className="text-xl font-black text-slate-900 mt-0.5">{catalogStats.totalProducts > 0 ? catalogStats.totalProducts : totalProducts} cadastrados</p>
           </div>
           <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
             <Package className="w-5 h-5" />
@@ -654,7 +773,7 @@ export default function ProdutosPage() {
             <input
               type="text"
               value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
+              onChange={(e) => handleQueryChange(e.target.value)}
               placeholder="Buscar por nome do produto, SKU ou marca..."
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             />
@@ -684,7 +803,7 @@ export default function ProdutosPage() {
             <div className="inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold text-slate-600">
               <button
                 type="button"
-                onClick={() => setStockFilter('ALL')}
+                onClick={() => handleStockFilterChange('ALL')}
                 className={`px-3 py-1 rounded-lg transition-all ${
                   stockFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
                 }`}
@@ -693,7 +812,7 @@ export default function ProdutosPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setStockFilter('LOW')}
+                onClick={() => handleStockFilterChange('LOW')}
                 className={`px-3 py-1 rounded-lg transition-all ${
                   stockFilter === 'LOW' ? 'bg-white text-red-700 shadow-xs font-bold' : 'hover:text-slate-900'
                 }`}
@@ -702,7 +821,7 @@ export default function ProdutosPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setStockFilter('NORMAL')}
+                onClick={() => handleStockFilterChange('NORMAL')}
                 className={`px-3 py-1 rounded-lg transition-all ${
                   stockFilter === 'NORMAL' ? 'bg-white text-emerald-700 shadow-xs font-bold' : 'hover:text-slate-900'
                 }`}
@@ -713,7 +832,9 @@ export default function ProdutosPage() {
 
             {/* Resultado + limpar */}
             <span className="text-xs text-slate-500 font-semibold">
-              {filteredProducts.length} de {products.length}
+              {filteredProducts.length > 0
+                ? `${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalProducts)} de ${totalProducts}`
+                : `0 de ${totalProducts}`}
             </span>
             {(filterQuery || stockFilter !== 'ALL' || advancedFilterCount > 0) && (
               <button
@@ -737,7 +858,10 @@ export default function ProdutosPage() {
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Marca</label>
               <select
                 value={brandFilter}
-                onChange={(e) => setBrandFilter(e.target.value)}
+                onChange={(e) => {
+                  setBrandFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Todas as Marcas</option>
@@ -752,7 +876,10 @@ export default function ProdutosPage() {
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Unidade</label>
               <select
                 value={unitFilter}
-                onChange={(e) => setUnitFilter(e.target.value)}
+                onChange={(e) => {
+                  setUnitFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Todas as Unidades</option>
@@ -767,7 +894,10 @@ export default function ProdutosPage() {
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo Comissão</label>
               <select
                 value={commissionFilter}
-                onChange={(e) => setCommissionFilter(e.target.value as any)}
+                onChange={(e) => {
+                  setCommissionFilter(e.target.value as any);
+                  setCurrentPage(1);
+                }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="ALL">Todas as Comissões</option>
@@ -782,7 +912,10 @@ export default function ProdutosPage() {
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status Ativo</label>
               <select
                 value={activeFilter}
-                onChange={(e) => setActiveFilter(e.target.value as any)}
+                onChange={(e) => {
+                  setActiveFilter(e.target.value as any);
+                  setCurrentPage(1);
+                }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="ALL">Todos os Status</option>
@@ -800,7 +933,10 @@ export default function ProdutosPage() {
                   min="0"
                   step="0.01"
                   value={minPriceFilter}
-                  onChange={(e) => setMinPriceFilter(e.target.value)}
+                  onChange={(e) => {
+                    setMinPriceFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Mín"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -810,7 +946,10 @@ export default function ProdutosPage() {
                   min="0"
                   step="0.01"
                   value={maxPriceFilter}
-                  onChange={(e) => setMaxPriceFilter(e.target.value)}
+                  onChange={(e) => {
+                    setMaxPriceFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Máx"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -825,7 +964,10 @@ export default function ProdutosPage() {
                   type="number"
                   min="0"
                   value={minStockFilter}
-                  onChange={(e) => setMinStockFilter(e.target.value)}
+                  onChange={(e) => {
+                    setMinStockFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Mín"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -834,7 +976,10 @@ export default function ProdutosPage() {
                   type="number"
                   min="0"
                   value={maxStockFilter}
-                  onChange={(e) => setMaxStockFilter(e.target.value)}
+                  onChange={(e) => {
+                    setMaxStockFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Máx"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -1163,11 +1308,7 @@ export default function ProdutosPage() {
                             {canDelete && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (window.confirm(`Tem certeza que deseja excluir "${prod.name}"?`)) {
-                                    deleteProduct(prod.id);
-                                  }
-                                }}
+                                onClick={() => handleDeleteProduct(prod.id, prod.name)}
                                 className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all border border-slate-200 hover:border-rose-200 shadow-2xs cursor-pointer"
                                 title="Excluir Produto (Admin/Gerente)"
                               >
@@ -1296,6 +1437,101 @@ export default function ProdutosPage() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* BARRA DE PAGINAÇÃO SERVER-SIDE */}
+            <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/50">
+              {/* Seletor de registros por página */}
+              <div className="flex items-center space-x-2 text-xs text-slate-600 font-medium">
+                <span>Exibir</span>
+                <div className="inline-flex rounded-xl bg-slate-200/80 p-0.5 text-xs font-bold text-slate-600">
+                  {[10, 20, 50, 100].map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => handlePageSizeChange(size)}
+                      className={`px-2.5 py-1 rounded-lg transition-all ${
+                        pageSize === size
+                          ? 'bg-white text-blue-600 shadow-xs'
+                          : 'hover:text-slate-900'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+                <span>por página</span>
+                <span className="text-slate-400 font-normal ml-2">
+                  (Página {currentPage} de {totalPages})
+                </span>
+              </div>
+
+              {/* Botões de Navegação entre Páginas */}
+              <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1 || isLoadingProducts}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Anterior</span>
+                </button>
+
+                {/* Números das páginas com elipses */}
+                <div className="flex items-center space-x-1">
+                  {(() => {
+                    const pages: (number | string)[] = [];
+                    if (totalPages <= 7) {
+                      for (let i = 1; i <= totalPages; i++) pages.push(i);
+                    } else {
+                      pages.push(1);
+                      if (currentPage > 3) pages.push('...');
+                      const start = Math.max(2, currentPage - 1);
+                      const end = Math.min(totalPages - 1, currentPage + 1);
+                      for (let i = start; i <= end; i++) pages.push(i);
+                      if (currentPage < totalPages - 2) pages.push('...');
+                      pages.push(totalPages);
+                    }
+                    return pages.map((p, idx) => {
+                      if (p === '...') {
+                        return (
+                          <span key={`dots-${idx}`} className="px-2 py-1 text-slate-400 font-bold text-xs">
+                            ...
+                          </span>
+                        );
+                      }
+                      const num = p as number;
+                      const isActive = num === currentPage;
+                      return (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setCurrentPage(num)}
+                          disabled={isLoadingProducts}
+                          className={`w-8 h-8 rounded-xl text-xs font-bold transition-all flex items-center justify-center ${
+                            isActive
+                              ? 'bg-blue-600 text-white shadow-xs shadow-blue-600/30'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages || isLoadingProducts}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs"
+                >
+                  <span className="hidden sm:inline">Próxima</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </>
         )}

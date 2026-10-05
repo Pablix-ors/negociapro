@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 
 const envFile = fs.readFileSync('.env.local', 'utf8');
-let supabaseUrl = 'https://fakytcdlffdulvdmbjut.supabase.co';
+let supabaseUrl = 'https://hqulqmxgrgjbsllquqeu.supabase.co';
 let supabaseKey = '';
 envFile.split('\n').forEach(line => {
   const [k, ...v] = line.trim().split('=');

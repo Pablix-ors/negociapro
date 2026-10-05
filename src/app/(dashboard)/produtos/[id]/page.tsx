@@ -30,7 +30,11 @@ export default function EditarProdutoPage() {
   const { user } = useAuth();
   const canDelete = user?.role === 'ADMIN' || user?.role === 'GERENTE';
 
-  const product = products.find((p) => p.id === productId);
+  // Produto ativo para edição (vindo do DataContext ou carregado sob demanda por ID)
+  const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null);
+  const [isLoadingProduct, setIsLoadingProduct] = useState(false);
+
+  const product = products.find((p) => p.id === productId) || fetchedProduct;
 
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -57,6 +61,22 @@ export default function EditarProdutoPage() {
 
   const [error, setError] = useState<string | null>(null);
 
+  // Busca o produto no backend caso o usuário tenha acessado o link direto
+  useEffect(() => {
+    if (!product && productId && user?.company_id) {
+      setIsLoadingProduct(true);
+      fetch(`/api/products?company_id=${user.company_id}&id=${encodeURIComponent(productId)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.success && Array.isArray(data.products) && data.products.length > 0) {
+            setFetchedProduct(data.products[0]);
+          }
+        })
+        .catch((err) => console.warn('Erro ao carregar produto:', err))
+        .finally(() => setIsLoadingProduct(false));
+    }
+  }, [product, productId, user?.company_id]);
+
   useEffect(() => {
     if (product) {
       setName(product.name || '');
@@ -76,6 +96,16 @@ export default function EditarProdutoPage() {
       setActive(product.active ?? true);
     }
   }, [product]);
+
+  if (isLoadingProduct) {
+    return (
+      <div className="max-w-4xl mx-auto p-12 text-center">
+        <Package className="w-12 h-12 text-blue-500 animate-pulse mx-auto mb-3" />
+        <h2 className="text-base font-bold text-slate-800">Carregando produto...</h2>
+        <p className="text-xs text-slate-400 mt-1">Aguarde enquanto os detalhes do item são carregados.</p>
+      </div>
+    );
+  }
 
   if (!product) {
     return (

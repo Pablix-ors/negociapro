@@ -8,7 +8,7 @@ import {
   isImageProxyUrl,
 } from '@/lib/server/apiHelpers';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fakytcdlffdulvdmbjut.supabase.co';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://hqulqmxgrgjbsllquqeu.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 function getAdminClient() {
@@ -47,7 +47,7 @@ function sanitizeImageField<T extends Record<string, unknown>>(fields: T): T {
   return fields;
 }
 
-// GET: Obter produtos de uma empresa (paginado: page/pageSize; incremental: updated_since; fields=ids)
+// GET: Obter produtos de uma empresa (paginado: page/limit/pageSize; search; filters; stats; incremental: updated_since; fields=ids)
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -58,12 +58,53 @@ export async function GET(request: Request) {
     }
 
     const supabase = getAdminClient();
-    const p = parsePagination(searchParams);
     const serverTime = new Date().toISOString();
+
+    // ── MODO 1: fields=stats (Consulta ultra-leve para métricas de estoque da empresa) ──
+    if (searchParams.get('fields') === 'stats') {
+      const { data: stockRows, error: statsErr } = await supabase
+        .from('products')
+        .select('id, current_stock, min_stock, brand, unit')
+        .eq('company_id', companyId);
+
+      if (statsErr) {
+        return NextResponse.json({ success: false, error: statsErr.message }, { status: 500 });
+      }
+
+      let totalProducts = 0;
+      let totalStock = 0;
+      let criticalCount = 0;
+      const brandsSet = new Set<string>();
+      const unitsSet = new Set<string>();
+
+      (stockRows || []).forEach((p: any) => {
+        totalProducts++;
+        const curr = Number(p.current_stock) || 0;
+        const min = Number(p.min_stock) || 0;
+        totalStock += curr;
+        if (curr <= min) criticalCount++;
+        if (p.brand) brandsSet.add(p.brand.trim());
+        if (p.unit) unitsSet.add(p.unit.trim().toUpperCase());
+      });
+
+      return NextResponse.json({
+        success: true,
+        stats: {
+          totalProducts,
+          totalStock,
+          criticalCount,
+          brands: Array.from(brandsSet).sort(),
+          units: Array.from(unitsSet).sort(),
+        },
+        server_time: serverTime,
+      });
+    }
+
+    // ── MODO 2: fields=ids (Apenas IDs para detecção de exclusões externas) ──
+    const p = parsePagination(searchParams);
     const idsOnly = searchParams.get('fields') === 'ids';
 
     if (idsOnly) {
-      // Lista leve só com ids (usada para detectar exclusões feitas em outro dispositivo)
       const { data, error } = await supabase
         .from('products')
         .select('id')
@@ -75,22 +116,118 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, ids: rows.map((r) => r.id), ...meta, server_time: serverTime });
     }
 
-    let query = supabase.from('products').select(PRODUCT_COLS).eq('company_id', companyId);
+    // ── MODO 3: Listagem paginada com contagem exata e filtros ──
+    // Permite param 'limit' (10, 20, 50, 100) ou fallback em pageSize (padrão 20 quando 'limit' ou 'page' fornecido explicitamente)
+    const rawLimit = searchParams.get('limit');
+    let limit = 20;
+    if (rawLimit) {
+      const parsedLimit = parseInt(rawLimit, 10);
+      if ([10, 20, 50, 100].includes(parsedLimit)) {
+        limit = parsedLimit;
+      }
+    } else if (searchParams.has('pageSize')) {
+      limit = p.pageSize;
+    }
+
+    const rawPage = parseInt(searchParams.get('page') || '1', 10);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = supabase
+      .from('products')
+      .select(PRODUCT_COLS, { count: 'exact' })
+      .eq('company_id', companyId);
+
+    // Filtro por ID único de produto (para telas de edição/detalhes direto via URL)
+    const singleId = searchParams.get('id');
+    if (singleId) {
+      query = query.eq('id', singleId);
+    }
+
+    // Filtro incremental por updated_at
     const updatedSince = parseUpdatedSince(searchParams);
     if (updatedSince) query = query.gte('updated_at', updatedSince);
 
-    const { data, error } = await query
+    // Busca textual por nome, SKU ou marca
+    const search = searchParams.get('search')?.trim();
+    if (search) {
+      const escaped = search.replace(/[%_,]/g, ' ');
+      query = query.or(`name.ilike.%${escaped}%,sku.ilike.%${escaped}%,brand.ilike.%${escaped}%`);
+    }
+
+    // Filtro por marca
+    const brand = searchParams.get('brand')?.trim();
+    if (brand) {
+      query = query.ilike('brand', `%${brand}%`);
+    }
+
+    // Filtro por unidade
+    const unit = searchParams.get('unit')?.trim();
+    if (unit) {
+      query = query.ilike('unit', unit);
+    }
+
+    // Filtro por status de ativação
+    const activeParam = searchParams.get('active');
+    if (activeParam === 'true') {
+      query = query.eq('active', true);
+    } else if (activeParam === 'false') {
+      query = query.eq('active', false);
+    }
+
+    // Filtro por tipo de comissão
+    const commissionType = searchParams.get('commission_type');
+    if (commissionType && ['NONE', 'PERCENTAGE', 'FIXED'].includes(commissionType)) {
+      query = query.eq('commission_type', commissionType);
+    }
+
+    // Filtros por preço e estoque numéricos
+    const minPrice = searchParams.get('min_price');
+    if (minPrice && !isNaN(Number(minPrice))) query = query.gte('selling_price', Number(minPrice));
+
+    const maxPrice = searchParams.get('max_price');
+    if (maxPrice && !isNaN(Number(maxPrice))) query = query.lte('selling_price', Number(maxPrice));
+
+    const minStock = searchParams.get('min_stock');
+    if (minStock && !isNaN(Number(minStock))) query = query.gte('current_stock', Number(minStock));
+
+    const maxStock = searchParams.get('max_stock');
+    if (maxStock && !isNaN(Number(maxStock))) query = query.lte('current_stock', Number(maxStock));
+
+    // Executa a consulta paginada com count: 'exact'
+    const { data, count, error } = await query
       .order('name', { ascending: true })
       .order('id', { ascending: true })
-      .range(p.from, p.toWithExtra);
+      .range(from, to);
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    const { rows, meta } = paginate(data as ProductRow[] | null, p);
+    const total = count ?? (data?.length || 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const hasMore = page < totalPages;
+
+    const rows = (data as ProductRow[]) || [];
     const products = await attachImageUrls(supabase, companyId, rows);
-    return NextResponse.json({ success: true, products, ...meta, server_time: serverTime });
+
+    return NextResponse.json({
+      success: true,
+      products,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+      page,
+      pageSize: limit,
+      total,
+      totalPages,
+      hasMore,
+      server_time: serverTime,
+    });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
